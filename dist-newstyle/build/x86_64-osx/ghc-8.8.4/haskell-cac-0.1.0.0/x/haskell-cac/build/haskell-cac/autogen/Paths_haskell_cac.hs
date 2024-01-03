@@ -1,5 +1,8 @@
 {-# LANGUAGE CPP #-}
 {-# LANGUAGE NoRebindableSyntax #-}
+#if __GLASGOW_HASKELL__ >= 810
+{-# OPTIONS_GHC -Wno-prepositive-qualified-module #-}
+#endif
 {-# OPTIONS_GHC -fno-warn-missing-import-lists #-}
 {-# OPTIONS_GHC -w #-}
 module Paths_haskell_cac (
@@ -41,13 +44,14 @@ getBinDir, getLibDir, getDynLibDir, getDataDir, getLibexecDir, getSysconfDir :: 
 
 
 
+
 bindir, libdir, dynlibdir, datadir, libexecdir, sysconfdir :: FilePath
-bindir     = "/Users/piyushkumar/.cabal/bin"
-libdir     = "/Users/piyushkumar/.cabal/lib/x86_64-osx-ghc-8.8.4/haskell-cac-0.1.0.0-inplace-haskell-cac"
-dynlibdir  = "/Users/piyushkumar/.cabal/lib/x86_64-osx-ghc-8.8.4"
-datadir    = "/Users/piyushkumar/.cabal/share/x86_64-osx-ghc-8.8.4/haskell-cac-0.1.0.0"
-libexecdir = "/Users/piyushkumar/.cabal/libexec/x86_64-osx-ghc-8.8.4/haskell-cac-0.1.0.0"
-sysconfdir = "/Users/piyushkumar/.cabal/etc"
+bindir     = "/Users/akhilesh.b/.cabal/bin"
+libdir     = "/Users/akhilesh.b/.cabal/lib/x86_64-osx-ghc-8.8.4/haskell-cac-0.1.0.0-inplace-haskell-cac"
+dynlibdir  = "/Users/akhilesh.b/.cabal/lib/x86_64-osx-ghc-8.8.4"
+datadir    = "/Users/akhilesh.b/.cabal/share/x86_64-osx-ghc-8.8.4/haskell-cac-0.1.0.0"
+libexecdir = "/Users/akhilesh.b/.cabal/libexec/x86_64-osx-ghc-8.8.4/haskell-cac-0.1.0.0"
+sysconfdir = "/Users/akhilesh.b/.cabal/etc"
 
 getBinDir     = catchIO (getEnv "haskell_cac_bindir")     (\_ -> return bindir)
 getLibDir     = catchIO (getEnv "haskell_cac_libdir")     (\_ -> return libdir)
@@ -55,7 +59,6 @@ getDynLibDir  = catchIO (getEnv "haskell_cac_dynlibdir")  (\_ -> return dynlibdi
 getDataDir    = catchIO (getEnv "haskell_cac_datadir")    (\_ -> return datadir)
 getLibexecDir = catchIO (getEnv "haskell_cac_libexecdir") (\_ -> return libexecdir)
 getSysconfDir = catchIO (getEnv "haskell_cac_sysconfdir") (\_ -> return sysconfdir)
-
 
 
 
