@@ -1,2 +1,3 @@
 /rust/cac_client/target
 /dist-newstyle
+/.direnv
