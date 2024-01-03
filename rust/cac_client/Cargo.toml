@@ -57,4 +57,4 @@ json-patch = { workspace = true }
 lazy_static = { workspace = true }
 tokio = { version = "1.0", features = ["full"] }
 futures = "0.3"
-superposition_client = { path = "/Users/akhilesh.b/Desktop/context-aware-config/crates/superposition_client"}
+superposition_client = { git = "ssh://git@ssh.bitbucket.juspay.net/picaf/context-aware-config.git", rev = "c603be0" }
