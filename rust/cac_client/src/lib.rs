@@ -226,9 +226,10 @@ pub extern "C" fn eval_experiment(c_tenant: *const c_char, context: *const c_cha
         log::error!("{}: {}", tenant, e);
         format!("{}: Failed to get cac client", tenant)
     }).expect("Failed to get cac client");
-    let mut ctx: serde_json::Map<String, Value> = serde_json::Map::new();
+    let mut ctx: serde_json::Map<String, Value> = serde_json::from_value(json!(ctx_str)).expect("Failed to convert to a map");
     ctx.insert(String::from("variantIds"), json!(variant_ids));
-    ctx.insert(String::from("Os"), json!("Linux"));
+    // ctx.insert(, json!("random"));
+    // ctx.insert(String::from("Os"), json!("Linux"));
     println!("context map {:?}", ctx);
     let overrides = cac_client.eval(ctx).expect("Failed to evaluate the context");
     println!("overrides data {:?}", overrides);

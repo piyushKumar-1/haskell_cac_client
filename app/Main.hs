@@ -106,16 +106,16 @@ main = do
   _ <- initCacClients host 10  arr2 (1 ::CInt)
   _ <- initSuperPositionClients host 1 arr2 (1 ::CInt)
   _ <- forkIO run_polling_updates
-  _ <- forkIO start_polling_updates
+  -- _ <- forkIO start_polling_updates
   tenant <- stringToCString "mjos"
 
-  let myHashMap = HashMap.fromList[(pack "merchantId", pack "random")]
-  val <- hashMapToCString myHashMap
-  result <- evalCtx tenant val >>= \evalCtx' -> withForeignPtr evalCtx' cStringToText
-  let final = fromMaybe defaultHashMap $ parseJsonToHashMap result  
-  putStrLn $ show final
+  -- let myHashMap = HashMap.fromList[(pack "distance", pack "10")]
+  -- val <- hashMapToCString myHashMap
+  -- result <- evalCtx tenant val >>= \evalCtx' -> withForeignPtr evalCtx' cStringToText
+  -- let final = fromMaybe defaultHashMap $ parseJsonToHashMap result  
+  -- putStrLn $ show final
   -- context <- stringToCString "{\"Os\":\"Linux\"}"
   -- _ <- evalCtx tenant context >>= \evalCtx' -> withForeignPtr evalCtx' peekCString >>= putStrLn 
-  -- context1 <- stringToCString "{\"Os\":\"Linux\"}"
-  -- _ <- evalExperiment tenant context1 20 >>= \evalCtx' -> withForeignPtr evalCtx' peekCString >>= putStrLn
+  context1 <- stringToCString "{\"merchantId\":\"random\"}"
+  _ <- evalExperiment tenant context1 23 >>= \evalCtx' -> withForeignPtr evalCtx' peekCString >>= putStrLn
   putStrLn "evaluated context"
