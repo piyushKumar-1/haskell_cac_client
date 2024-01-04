@@ -24,7 +24,6 @@ use utils::core::MapError;
 use tokio::sync::oneshot;
 use std::ffi::{CStr, CString};
 use std::os::raw::{c_char, c_uint, c_ulonglong, c_int};
-use tokio::task::LocalSet;
 
 use superposition_client as sp;
 use tokio::runtime::Runtime;
@@ -66,7 +65,7 @@ fn convert_to_rust_duration(secs: c_ulonglong, nanos: c_uint) -> std::time::Dura
 }
 
 #[no_mangle]
-pub extern "C" fn init_cac_clients(hostname: *const c_char, polling_interval_secs : c_ulonglong, update_cac_periodically : bool, tenants : *const *const c_char, tenants_count: c_uint) -> *const u64 {
+pub extern "C" fn init_cac_clients(hostname: *const c_char, polling_interval_secs : c_ulonglong, tenants : *const *const c_char, tenants_count: c_uint) -> *const u64 {
     let (tx, rx) = oneshot::channel();
     let cac_hostname = convert_c_str_to_rust_str(hostname);
     let polling_interval = convert_to_rust_duration(polling_interval_secs, 0);
@@ -84,7 +83,6 @@ pub extern "C" fn init_cac_clients(hostname: *const c_char, polling_interval_sec
             CLIENT_FACTORY
                 .create_client(
                     tenant.to_string(),
-                    update_cac_periodically,
                     polling_interval,
                     cac_hostname.to_string(),
                 )
@@ -144,6 +142,23 @@ pub extern "C" fn run_polling_updates() {
                 format!("{}: Failed to get cac client", tenant)
             }).expect("Failed to get superposition client");
         sp_client.run_polling_updates().await;
+        println!("Async task polling completed!");
+    });
+}
+
+#[no_mangle]
+pub extern "C" fn start_polling_updates() {
+    let rt = Runtime::new().unwrap();
+    let tenant = "mjos".to_string();
+    rt.block_on(async {
+        println!("Async task polling started!");
+        let client = CLIENT_FACTORY
+            .get_client(tenant.clone())
+            .map_err(|e| {
+                log::error!("{}: {}", tenant, e);
+                format!("{}: Failed to get cac client", tenant)
+            }).expect("Failed to get superposition client");
+        client.start_polling_update().await;
         println!("Async task polling completed!");
     });
 }
@@ -275,7 +290,6 @@ fn get_last_modified(resp: &Response) -> Option<DateTime<Utc>> {
 impl Client {
     pub async fn new(
         tenant: String,
-        update_config_periodically: bool,
         polling_interval: Duration,
         hostname: String,
     ) -> Result<Self, String> {
@@ -299,9 +313,9 @@ impl Client {
             )),
             config: Data::new(RwLock::new(config)),
         };
-        if update_config_periodically {
-            client.clone().start_polling_update().await;
-        }
+        // if update_config_periodically {
+        //     client.clone().start_polling_update().await;
+        // }
         Ok(client)
     }
 
@@ -337,19 +351,12 @@ impl Client {
         Ok(format!("{}: CAC updated successfully", self.tenant))
     }
 
-    pub async fn start_polling_update(self) {
-        let local_set = LocalSet::new();
-        // Spawn a local task within the LocalSet
-        local_set.spawn_local(async move {
-            let mut interval = interval(self.polling_interval);
-            loop {
-                log::info!("yipiu");
-                println!("Async task started! 3");
-                interval.tick().await;
-                self.update_cac().await.unwrap_or_else(identity);
-                println!("Async task started! 4");
-            }
-        });
+    pub async fn start_polling_update(self: Arc<Self>) {
+        let mut interval = interval(self.polling_interval);
+        loop {
+            interval.tick().await;
+            self.update_cac().await.unwrap_or_else(identity);
+        }
     }
 
     pub fn get_config(&self) -> Result<Config, String> {
@@ -380,7 +387,6 @@ impl ClientFactory {
     pub async fn create_client(
         &self,
         tenant: String,
-        update_config_periodically: bool,
         polling_interval: Duration,
         hostname: String,
     ) -> Result<Arc<Client>, String> {
@@ -399,7 +405,6 @@ impl ClientFactory {
         let client = Arc::new(
             Client::new(
                 tenant.to_string(),
-                update_config_periodically,
                 polling_interval,
                 hostname,
             )

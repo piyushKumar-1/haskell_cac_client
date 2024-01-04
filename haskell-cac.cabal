@@ -59,6 +59,9 @@ executable haskell-cac
     -- .hs or .lhs file containing the Main module.
     main-is:          Main.hs
 
+    build-depends: 
+        text
+
     -- Modules included in this executable, other than Main.
     -- other-modules:
 
@@ -66,7 +69,12 @@ executable haskell-cac
     -- other-extensions:
 
     -- Other library packages from which modules are imported.
-    build-depends:    base ^>=4.13.0.0
+    build-depends:    
+        base ^>=4.13.0.0
+        , text
+        , aeson
+        , unordered-containers
+        , bytestring
 
     extra-libraries: cac_client 
 
