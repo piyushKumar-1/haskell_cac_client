@@ -76,10 +76,8 @@ pub extern "C" fn init_cac_clients(hostname: *const c_char, polling_interval_sec
 
     // Spawn an async task
     rt.block_on(async {
-        println!("Async task started!");
 
         for tenant in cac_tenants {
-            println!("Async task started! 2");
             CLIENT_FACTORY
                 .create_client(
                     tenant.to_string(),
@@ -90,7 +88,6 @@ pub extern "C" fn init_cac_clients(hostname: *const c_char, polling_interval_sec
                 .expect(format!("{}: Failed to acquire cac_client", tenant).as_str());
         }
         tx.send("CLIENTS_CREATED").unwrap();
-        println!("Async task completed!");
     });
     let id = gen_unique_id();
     STATUSES.write().unwrap().insert(id, rx);
@@ -105,35 +102,26 @@ pub extern "C" fn init_superposition_clients(hostname: *const c_char, polling_fr
     let cac_tenants = convert_c_array_to_vec(tenants, tenants_count);
     let rt = Runtime::new().unwrap();
     rt.block_on(async {
-        println!("Async task started!");
 
         for tenant in cac_tenants {
                 sp::CLIENT_FACTORY
                     .create_client(tenant.to_string(), poll_frequency, hostname.to_string())
                     .await
                     .expect(format!("{}: Failed to acquire superposition_client", tenant).as_str());
-                    // .clone().run_polling_updates().await;;
-                // println!("Client {:?}", client);
-                // tokio::spawn(async{
-                //     client.run_polling_updates().await;
-                // });
         }
         tx.send("CLIENTS_CREATED").unwrap();
 
-        println!("Async task completed!");
     });
     let id = gen_unique_id();
     STATUSES.write().unwrap().insert(id, rx);
-    println!("Superposition complete! 1");
     &id
 }
 
 #[no_mangle]
-pub extern "C" fn run_polling_updates() {
+pub extern "C" fn run_polling_updates(c_tenant: *const c_char) {
     let rt = Runtime::new().unwrap();
-    let tenant = "mjos".to_string();
+    let tenant = convert_c_str_to_rust_str(c_tenant);
     rt.block_on(async {
-        println!("Async task polling started!");
         let sp_client = sp::CLIENT_FACTORY
             .get_client(tenant.clone())
             .await
@@ -142,16 +130,15 @@ pub extern "C" fn run_polling_updates() {
                 format!("{}: Failed to get cac client", tenant)
             }).expect("Failed to get superposition client");
         sp_client.run_polling_updates().await;
-        println!("Async task polling completed!");
     });
 }
 
 #[no_mangle]
-pub extern "C" fn start_polling_updates() {
+pub extern "C" fn start_polling_updates(c_tenant: *const c_char) {
     let rt = Runtime::new().unwrap();
-    let tenant = "mjos".to_string();
+    let tenant = convert_c_str_to_rust_str(c_tenant);
     rt.block_on(async {
-        println!("Async task polling started!");
+        
         let client = CLIENT_FACTORY
             .get_client(tenant.clone())
             .map_err(|e| {
@@ -159,7 +146,6 @@ pub extern "C" fn start_polling_updates() {
                 format!("{}: Failed to get cac client", tenant)
             }).expect("Failed to get superposition client");
         client.start_polling_update().await;
-        println!("Async task polling completed!");
     });
 }
 
@@ -179,9 +165,7 @@ pub extern "C" fn eval_ctx(c_tenant: *const c_char, ctx_json: *const c_char) -> 
     let ctx_obj: Map<String, Value> = serde_json::from_str(ctx_str).unwrap();
     let overrides = cac_client.eval(ctx_obj).expect("Failed to fetch the context");
     let searialized_string = serialize_map_to_json(&overrides).expect("JSON serialization failed");
-    println!("JSON: {:?}", searialized_string);
     let c_string = CString::new(searialized_string).expect("Failed to create CString");
-    println!("JSON: {:?}", c_string);
     return c_string.into_raw();
 
 }
@@ -206,9 +190,7 @@ fn  c_char_to_json(ptr: *const c_char) -> Result<Value, String> {
 
 #[no_mangle]
 pub extern "C" fn eval_experiment(c_tenant: *const c_char, context: *const c_char, toss: c_int) -> *const c_char {
-    println!("context1 {:?}", context);
     let ctx_str = c_char_to_json(context).expect("Failed to parse the context");
-    println!("context2 {:?}", ctx_str);
     let toss_value = toss as i8;
     let rt = Runtime::new().unwrap();
     let tenant = convert_c_str_to_rust_str(c_tenant);
@@ -219,26 +201,17 @@ pub extern "C" fn eval_experiment(c_tenant: *const c_char, context: *const c_cha
             log::error!("{}: {}", tenant, e);
             format!("{}: Failed to get cac client", tenant)
         })}).expect("Failed to get superposition client");
-    println!("sp_client here {:?}", sp_client);
     let variant_ids = rt.block_on(async{sp_client.get_applicable_variant(&ctx_str, toss_value).await});
-    println!("variant being applied {:?} and context {:?}", variant_ids, ctx_str);
     let cac_client = CLIENT_FACTORY.get_client(tenant.clone()).map_err(|e| {
         log::error!("{}: {}", tenant, e);
         format!("{}: Failed to get cac client", tenant)
     }).expect("Failed to get cac client");
     let mut ctx: serde_json::Map<String, Value> = serde_json::from_value(json!(ctx_str)).expect("Failed to convert to a map");
     ctx.insert(String::from("variantIds"), json!(variant_ids));
-    // ctx.insert(, json!("random"));
-    // ctx.insert(String::from("Os"), json!("Linux"));
-    println!("context map {:?}", ctx);
     let overrides = cac_client.eval(ctx).expect("Failed to evaluate the context");
-    println!("overrides data {:?}", overrides);
     let searialized_string = serialize_map_to_json(&overrides).expect("JSON serialization failed");
-    println!("JSON: {:?}", searialized_string);
     let c_string = CString::new(searialized_string).expect("Failed to create CString");
-    println!("JSON: {:?}", c_string);
     return c_string.into_raw();
-    // return context
 }
 
 #[no_mangle]

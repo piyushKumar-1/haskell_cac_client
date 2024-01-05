@@ -13,7 +13,7 @@ import Foreign.C
 
 import Foreign.ForeignPtr.Unsafe  (unsafeForeignPtrToPtr)
 import Control.Concurrent
-import Prelude
+import Prelude as P
 import Data.Text 
 import GHC.Generics
 import Data.Aeson
@@ -21,6 +21,7 @@ import Data.HashMap.Strict as HashMap
 import qualified Data.ByteString.Lazy.Char8 as BS
 import Data.Text.Encoding
 import Data.Maybe
+-- import Database.LevelDB.Internal
 
 
 foreign import ccall "init_cac_clients" init_cac_clients :: CString -> CULong -> Ptr CString -> CInt -> IO (Ptr CULong)
@@ -28,8 +29,8 @@ foreign import ccall "eval_ctx" eval_ctx :: CString -> CString -> IO (Ptr CChar)
 foreign import ccall "&free_json_data" free_json_data :: FunPtr (Ptr CChar -> IO ())
 foreign import ccall "init_superposition_clients" init_superposition_clients :: CString -> CULong -> Ptr CString -> CInt -> IO (Ptr CULong)
 foreign import ccall "eval_experiment" eval_experiment ::  CString -> CString -> CInt -> IO (Ptr CChar)
-foreign import ccall "run_polling_updates" run_polling_updates :: IO ()
-foreign import ccall "start_polling_updates" start_polling_updates :: IO ()
+foreign import ccall "run_polling_updates" run_polling_updates :: CString ->  IO ()
+foreign import ccall "start_polling_updates" start_polling_updates ::CString ->  IO ()
 
 
 initCacClients :: CString -> CULong -> Ptr CString -> CInt -> IO (ForeignPtr CULong)
@@ -54,7 +55,6 @@ evalExperiment tenant context toss = do
 
 freeJsonData :: Ptr CChar -> IO (ForeignPtr CChar)
 freeJsonData ptr = do
-  putStrLn "freeing json data"
   newForeignPtr free_json_data ptr
 
 stringToCString :: String -> IO CString
@@ -96,26 +96,27 @@ parseJsonToHashMap txt = decode . BS.fromStrict . encodeUtf8 $ txt
 
 
 
-
 main :: IO ()
 main = do
-  putStrLn "Hello, Haskell!"
-  arr1 <- mapM stringToCString ["mjos"]
+  arr1 <- mapM stringToCString ["test","dev","rider","driver"]
   arr2 <- newArray arr1
   host <- stringToCString "http://localhost:8080"
-  _ <- initCacClients host 10  arr2 (1 ::CInt)
-  _ <- initSuperPositionClients host 1 arr2 (1 ::CInt)
-  _ <- forkIO run_polling_updates
-  -- _ <- forkIO start_polling_updates
-  tenant <- stringToCString "mjos"
+  _ <- initCacClients host 10  arr2 (fromIntegral (P.length arr1))
+  _ <- initSuperPositionClients host 1 arr2 (fromIntegral (P.length arr1))
+  _ <- mapM (\tenant -> forkIO (run_polling_updates tenant)) arr1
+  _ <- mapM (\tenant -> forkIO ( start_polling_updates tenant)) arr1
+  tenant1 <- stringToCString "rider"
+  tenant2 <- stringToCString "driver"
 
   -- let myHashMap = HashMap.fromList[(pack "distance", pack "10")]
   -- val <- hashMapToCString myHashMap
-  -- result <- evalCtx tenant val >>= \evalCtx' -> withForeignPtr evalCtx' cStringToText
-  -- let final = fromMaybe defaultHashMap $ parseJsonToHashMap result  
-  -- putStrLn $ show final
-  -- context <- stringToCString "{\"Os\":\"Linux\"}"
+  context <- stringToCString "{\"Os\":\"Linux\"}"
+  result1 <- evalCtx tenant1 context >>= \evalCtx' -> withForeignPtr evalCtx' cStringToText
+  result2 <- evalCtx tenant2 context >>= \evalCtx' -> withForeignPtr evalCtx' cStringToText
+  let final1 = fromMaybe defaultHashMap $ parseJsonToHashMap result1 
+  let final2 = fromMaybe defaultHashMap $ parseJsonToHashMap result2
+  putStrLn $ ("final1 is " <> show final1 <> " final2 is " <> show final2) 
   -- _ <- evalCtx tenant context >>= \evalCtx' -> withForeignPtr evalCtx' peekCString >>= putStrLn 
-  context1 <- stringToCString "{\"merchantId\":\"random\"}"
-  _ <- evalExperiment tenant context1 23 >>= \evalCtx' -> withForeignPtr evalCtx' peekCString >>= putStrLn
+  -- context1 <- stringToCString "{\"merchantId\":\"random\"}"
+  -- _ <- evalExperiment tenant context1 23 >>= \evalCtx' -> withForeignPtr evalCtx' peekCString >>= putStrLn
   putStrLn "evaluated context"
