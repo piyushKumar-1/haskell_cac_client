@@ -34,7 +34,7 @@ dashboard-auth = { git = "ssh://git@ssh.bitbucket.juspay.net/picaf/sdk-rs-utils.
 [lib]
 name = "cac_client"
 path = "src/lib.rs"
-crate-type = ["cdylib"]
+crate-type = ["staticlib", "cdylib"]
 
 [package]
 name = "cac_client"
