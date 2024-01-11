@@ -1,3 +1,8 @@
 /rust/cac_client/target
 /dist-newstyle
 /.direnv
+/result
+/result-*
+/.cabal-dir
+/.hie-bios-cache
+/*/dist-newstyle
