@@ -25,10 +25,14 @@
       inputsFrom = [ 
         config.haskellProjects.default.outputs.devShell 
         config.flake-root.devShell
+        self'.devShells.haskell-cac
       ];
       # TODO: set once, based on platform
       # TODO(refactor): SRID: can we do this in one place?
       # LD_LIBRARY_PATH = "${self'.packages.cac_client}/lib";
+    };
+    devShells.haskell-cac = pkgs.mkShell {
+      name = "cac-haskell-cac";
       shellHook = ''
         export DYLD_LIBRARY_PATH="${self'.packages.cac_client}/lib"
       '';
