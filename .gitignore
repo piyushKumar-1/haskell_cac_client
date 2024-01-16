@@ -6,3 +6,4 @@
 /.cabal-dir
 /.hie-bios-cache
 /*/dist-newstyle
+/*/.DS_Store

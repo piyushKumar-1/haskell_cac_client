@@ -21,8 +21,6 @@ import Foreign.C
 import Foreign.ForeignPtr.Unsafe (unsafeForeignPtrToPtr)
 import Prelude as P
 
--- import Database.LevelDB.Internal
-
 foreign import ccall "init_cac_clients" init_cac_clients :: CString -> CULong -> Ptr CString -> CInt -> IO (Ptr CULong)
 
 foreign import ccall "eval_ctx" eval_ctx :: CString -> CString -> IO (Ptr CChar)
@@ -47,7 +45,7 @@ initSuperPositionClients hostname polling_interval tenants tenants_count = do
   resPtr <- init_superposition_clients hostname polling_interval tenants tenants_count
   newForeignPtr_ resPtr
 
-evalCtx :: String -> String -> IO (Maybe MyHashMap)
+evalCtx :: String -> String -> IO DA.Value
 evalCtx tenant context = do
   putStrLn $ "evalCtx called with tenant: " <> tenant <> " and context: " <> context
   tenant' <- stringToCString tenant
@@ -56,16 +54,16 @@ evalCtx tenant context = do
   resPtr' <- freeJsonData resPtr
   withForeignPtr resPtr' peekCString >>= putStrLn
   result <- withForeignPtr resPtr' cStringToText
-  pure $ parseJsonToHashMap result
+  pure $ DA.toJSON result
 
-evalExperiment :: String -> String -> Int -> IO (Maybe MyHashMap)
+evalExperiment :: String -> String -> Int -> IO DA.Value
 evalExperiment tenant context toss = do
   tenant' <- stringToCString tenant
   context' <- stringToCString context
   resPtr <- eval_experiment tenant' context' $ fromIntegral toss
   resPtr' <- freeJsonData resPtr
   result <- withForeignPtr resPtr' cStringToText
-  pure $ parseJsonToHashMap result
+  pure $ DA.toJSON result
 
 freeJsonData :: Ptr CChar -> IO (ForeignPtr CChar)
 freeJsonData ptr = do
@@ -97,6 +95,8 @@ cStringToText cStr = pack <$> peekCString cStr
 parseJsonToHashMap :: Text -> Maybe MyHashMap
 parseJsonToHashMap txt = DA.decode . BS.fromStrict . encodeUtf8 $ txt
 
+-- intiateClients :: {super, interval, d} -> forkingInterval -> -> IO ()
+
 main :: IO ()
 main = do
   putStrLn "Starting Haskell client..."
@@ -107,13 +107,13 @@ main = do
   _ <- initSuperPositionClients host 1 arr2 (fromIntegral (P.length arr1))
   _ <- mapM (\tenant -> forkOS (run_polling_updates tenant)) arr1
   _ <- mapM (\tenant -> forkOS (start_polling_updates tenant)) arr1
-  tenant1 <- stringToCString "test"
+  -- tenant1 <- stringToCString "test"
   -- tenant2 <- stringToCString "dev"
-  farePolicyCond <- hashMapToString $ HashMap.fromList [(pack "merchantOperatingCityId", DA.String (Text.pack ("NAMMA_YATRI"))), (pack "tripDistance", DA.String (Text.pack ("500")))]
-  contextValue <- evalCtx "test" farePolicyCond
-  putStrLn $ "contextValue: " <> show contextValue
-  value <- (hashMapToString (fromMaybe (HashMap.fromList [(pack "defaultKey", DA.String (Text.pack ("defaultValue")))]) contextValue))
-  putStrLn $ "contextValueEvaluated: " <> show value
+  -- farePolicyCond <- hashMapToString $ HashMap.fromList [(pack "merchantOperatingCityId", DA.String (Text.pack ("NAMMA_YATRI"))), (pack "tripDistance", DA.String (Text.pack ("500")))]
+  -- contextValue <- evalCtx "test" farePolicyCond
+  -- putStrLn $ "contextValue: " <> show contextValue
+  -- value <- (hashMapToString (fromMaybe (HashMap.fromList [(pack "defaultKey", DA.String (Text.pack ("defaultValue")))]) contextValue))
+  -- putStrLn $ "contextValueEvaluated: " <> show value
   -- result1 <- evalCtx tenant1 context >>= \evalCtx' -> withForeignPtr evalCtx' cStringToText
   -- result2 <- evalCtx tenant2 context >>= \evalCtx' -> withForeignPtr evalCtx' cStringToText
   -- let final1 = fromMaybe defaultHashMap $ parseJsonToHashMap result1
