@@ -20,6 +20,9 @@ import Foreign
 import Foreign.C
 import Foreign.ForeignPtr.Unsafe (unsafeForeignPtrToPtr)
 import Prelude as P
+import qualified Data.ByteString.Lazy as BL
+import qualified Data.Text.Encoding as TE
+
 
 foreign import ccall "init_cac_clients" init_cac_clients :: CString -> CULong -> Ptr CString -> CInt -> IO (Ptr CULong)
 
@@ -45,7 +48,7 @@ initSuperPositionClients hostname polling_interval tenants tenants_count = do
   resPtr <- init_superposition_clients hostname polling_interval tenants tenants_count
   newForeignPtr_ resPtr
 
-evalCtx :: String -> String -> IO DA.Value
+evalCtx :: String -> String -> IO (Either String Object)
 evalCtx tenant context = do
   putStrLn $ "evalCtx called with tenant: " <> tenant <> " and context: " <> context
   tenant' <- stringToCString tenant
@@ -54,16 +57,16 @@ evalCtx tenant context = do
   resPtr' <- freeJsonData resPtr
   withForeignPtr resPtr' peekCString >>= putStrLn
   result <- withForeignPtr resPtr' cStringToText
-  pure $ DA.toJSON result
+  return $ convertTextToObject result
 
-evalExperiment :: String -> String -> Int -> IO DA.Value
+evalExperiment :: String -> String -> Int -> IO (Either String Object)
 evalExperiment tenant context toss = do
   tenant' <- stringToCString tenant
   context' <- stringToCString context
   resPtr <- eval_experiment tenant' context' $ fromIntegral toss
   resPtr' <- freeJsonData resPtr
   result <- withForeignPtr resPtr' cStringToText
-  pure $ DA.toJSON result
+  return $ convertTextToObject result
 
 freeJsonData :: Ptr CChar -> IO (ForeignPtr CChar)
 freeJsonData ptr = do
@@ -95,6 +98,18 @@ cStringToText cStr = pack <$> peekCString cStr
 parseJsonToHashMap :: Text -> Maybe MyHashMap
 parseJsonToHashMap txt = DA.decode . BS.fromStrict . encodeUtf8 $ txt
 
+convertTextToObject :: Text -> Either String Object
+convertTextToObject txt = do
+    -- Convert Text to ByteString
+    let bs = BL.fromStrict $ TE.encodeUtf8 txt
+
+    -- Parse ByteString to Value
+    value <- eitherDecode' bs :: Either String Value
+
+    -- Ensure Value is an Object
+    case value of
+        Object obj -> Right obj
+        _ -> Left "Text does not represent a JSON object"
 -- intiateClients :: {super, interval, d} -> forkingInterval -> -> IO ()
 
 main :: IO ()
@@ -109,8 +124,12 @@ main = do
   _ <- mapM (\tenant -> forkOS (start_polling_updates tenant)) arr1
   -- tenant1 <- stringToCString "test"
   -- tenant2 <- stringToCString "dev"
-  -- farePolicyCond <- hashMapToString $ HashMap.fromList [(pack "merchantOperatingCityId", DA.String (Text.pack ("NAMMA_YATRI"))), (pack "tripDistance", DA.String (Text.pack ("500")))]
-  -- contextValue <- evalCtx "test" farePolicyCond
+  farePolicyCond <- hashMapToString $ HashMap.fromList [(pack "os", DA.String (Text.pack ("200")))]
+  contextValue <- evalCtx "test" farePolicyCond
+  -- let objectify = convertTextToObject contextValue
+  case contextValue of
+    Left err -> putStrLn $ "Error: " <> err
+    Right obj -> putStrLn $ "Object: " <> show obj
   -- putStrLn $ "contextValue: " <> show contextValue
   -- value <- (hashMapToString (fromMaybe (HashMap.fromList [(pack "defaultKey", DA.String (Text.pack ("defaultValue")))]) contextValue))
   -- putStrLn $ "contextValueEvaluated: " <> show value
