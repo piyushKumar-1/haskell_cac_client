@@ -22,6 +22,7 @@ import Foreign.ForeignPtr.Unsafe (unsafeForeignPtrToPtr)
 import Prelude as P
 import qualified Data.ByteString.Lazy as BL
 import qualified Data.Text.Encoding as TE
+import Control.Monad
 
 
 foreign import ccall "init_cac_clients" init_cac_clients :: CString -> CULong -> Ptr CString -> CInt -> IO (Ptr CULong)
@@ -98,12 +99,37 @@ cStringToText cStr = pack <$> peekCString cStr
 parseJsonToHashMap :: Text -> Maybe MyHashMap
 parseJsonToHashMap txt = DA.decode . BS.fromStrict . encodeUtf8 $ txt
 
+initializeClients :: Bool -> Maybe (String, Int, [String]) -> Bool -> Maybe (String, Int, [String]) -> IO ()
+initializeClients initCac cacConf initSuper superConf = do
+  case initCac of 
+    True ->
+      case cacConf of
+        Just (host, interval, tenants) -> do
+          tenantsCount <- return $ P.length tenants
+          arr1 <- mapM stringToCString tenants
+          arr2 <- newArray arr1
+          host' <- stringToCString host
+          _ <- initCacClients host' (fromIntegral interval) arr2 (fromIntegral tenantsCount)
+          Control.Monad.void $ mapM (\tenant -> forkOS (start_polling_updates tenant)) arr1
+        Nothing ->  error "CAC configuration not provided"
+    _ -> return ()
+  case initSuper of
+    True ->
+      case superConf of
+        Just (host, interval, tenants) -> do
+          tenantsCount <- return $ P.length tenants
+          arr1 <- mapM stringToCString tenants
+          arr2 <- newArray arr1
+          host' <- stringToCString host
+          _ <- initSuperPositionClients host' (fromIntegral interval) arr2 (fromIntegral tenantsCount)
+          Control.Monad.void $ mapM (\tenant -> forkOS (run_polling_updates tenant)) arr1
+        Nothing -> error "Superposition configuration not provided"
+    _ -> return ()
+
 convertTextToObject :: Text -> Either String Object
 convertTextToObject txt = do
-    -- Convert Text to ByteString
     let bs = BL.fromStrict $ TE.encodeUtf8 txt
 
-    -- Parse ByteString to Value
     value <- eitherDecode' bs :: Either String Value
 
     -- Ensure Value is an Object
