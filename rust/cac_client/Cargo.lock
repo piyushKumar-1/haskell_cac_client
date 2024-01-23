@@ -1436,8 +1436,8 @@ dependencies = [
 
 [[package]]
 name = "superposition_client"
-version = "0.2.0"
-source = "git+ssh://git@ssh.bitbucket.juspay.net/picaf/context-aware-config.git?rev=c603be0#c603be0264f1227f7d1911d00dd01b253abd2727"
+version = "0.4.0"
+source = "git+https://github.com/nammayatri/context-aware-config.git?branch=Backend/feat/open-source-cac#964bb3e02795435b1e20ed4db27905c8b76db8f3"
 dependencies = [
  "chrono",
  "derive_more",
