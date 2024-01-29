@@ -23,6 +23,7 @@ import Prelude as P
 import qualified Data.ByteString.Lazy as BL
 import qualified Data.Text.Encoding as TE
 import Control.Monad
+import System.Environment as Se
 
 
 foreign import ccall "init_cac_clients" init_cac_clients :: CString -> CULong -> Ptr CString -> CInt -> IO (Ptr CULong)
@@ -143,16 +144,17 @@ main = do
   putStrLn "Starting Haskell client..."
   arr1 <- mapM stringToCString ["test", "dev"]
   arr2 <- newArray arr1
-  host <- stringToCString "http://localhost:8080"
+  hostEnv <- Se.lookupEnv "HOST"
+  host <- stringToCString $ fromMaybe "http://localhost:8080" hostEnv
   _ <- initCacClients host 10 arr2 (fromIntegral (P.length arr1))
   _ <- initSuperPositionClients host 1 arr2 (fromIntegral (P.length arr1))
   _ <- mapM (\tenant -> forkOS (run_polling_updates tenant)) arr1
   _ <- mapM (\tenant -> forkOS (start_polling_updates tenant)) arr1
   -- tenant1 <- stringToCString "test"
   -- tenant2 <- stringToCString "dev"
-  farePolicyCond <- hashMapToString $ HashMap.fromList [(pack "os", DA.String (Text.pack ("200")))]
-  contextValue <- evalCtx "test" farePolicyCond
-  -- let objectify = convertTextToObject contextValue
+  cond <- hashMapToString $ HashMap.fromList [(pack "k1", DA.String (Text.pack ("2000")))]
+  contextValue <- evalCtx "test" cond
+  let objectify = contextValue
   case contextValue of
     Left err -> putStrLn $ "Error: " <> err
     Right obj -> putStrLn $ "Object: " <> show obj
