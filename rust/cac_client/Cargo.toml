@@ -29,7 +29,7 @@ rand = "0.8.5"
 once_cell = { version = "1.18.0" }
 anyhow = { version = "1.0", default-features = false }
 # juspay dependencies
-dashboard-auth = { git = "https://github.com/nammayatri/sdk-rs-utils.git", branch = "Backend/feat/dashboard"}
+# dashboard-auth = { git = "https://github.com/nammayatri/sdk-rs-utils.git", branch = "Backend/feat/dashboard"}
 
 [lib]
 name = "cac_client"
@@ -57,4 +57,4 @@ json-patch = { workspace = true }
 lazy_static = { workspace = true }
 tokio = { version = "1.0", features = ["full"] }
 futures = "0.3"
-superposition_client = { git = "https://github.com/nammayatri/context-aware-config.git", branch = "Backend/feat/open-source-cac" }
+# superposition_client = { git = "https://github.com/nammayatri/context-aware-config.git", branch = "Backend/feat/open-source-cac" }

@@ -354,7 +354,6 @@ dependencies = [
  "reqwest",
  "serde",
  "serde_json",
- "superposition_client",
  "tokio",
 ]
 
@@ -481,12 +480,6 @@ dependencies = [
  "block-buffer",
  "crypto-common",
 ]
-
-[[package]]
-name = "dotenv"
-version = "0.15.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "77c90badedccf4105eca100756a0b1289e191f6fcbdadd3cee1d2f614f97da8f"
 
 [[package]]
 name = "encoding_rs"
@@ -1432,23 +1425,6 @@ checksum = "7b5fac59a5cb5dd637972e5fca70daf0523c9067fcdc4842f053dae04a18f8e9"
 dependencies = [
  "libc",
  "windows-sys 0.48.0",
-]
-
-[[package]]
-name = "superposition_client"
-version = "0.4.0"
-source = "git+https://github.com/nammayatri/context-aware-config.git?branch=Backend/feat/open-source-cac#964bb3e02795435b1e20ed4db27905c8b76db8f3"
-dependencies = [
- "chrono",
- "derive_more",
- "dotenv",
- "jsonlogic",
- "log",
- "once_cell",
- "reqwest",
- "serde",
- "serde_json",
- "tokio",
 ]
 
 [[package]]

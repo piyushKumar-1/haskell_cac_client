@@ -1,5 +1,7 @@
 mod eval;
 mod utils;
+mod superposition_client;
+mod types;
 
 #[macro_use]
 extern crate lazy_static;
