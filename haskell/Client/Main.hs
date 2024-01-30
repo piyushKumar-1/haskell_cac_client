@@ -142,7 +142,7 @@ convertTextToObject txt = do
 main :: IO ()
 main = do
   putStrLn "Starting Haskell client..."
-  arr1 <- mapM stringToCString ["test", "dev"]
+  arr1 <- mapM stringToCString ["ltsdefault", "atlas_driver_offer_bpp_v2", "atlas_app_v2","atlas_lts"]
   arr2 <- newArray arr1
   hostEnv <- Se.lookupEnv "HOST"
   host <- stringToCString $ fromMaybe "http://localhost:8080" hostEnv
