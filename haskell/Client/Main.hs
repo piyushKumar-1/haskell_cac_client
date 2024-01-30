@@ -152,12 +152,12 @@ main = do
   _ <- mapM (\tenant -> forkOS (start_polling_updates tenant)) arr1
   -- tenant1 <- stringToCString "test"
   -- tenant2 <- stringToCString "dev"
-  cond <- hashMapToString $ HashMap.fromList [(pack "k1", DA.String (Text.pack ("2000")))]
-  contextValue <- evalCtx "test" cond
-  let objectify = contextValue
-  case contextValue of
-    Left err -> putStrLn $ "Error: " <> err
-    Right obj -> putStrLn $ "Object: " <> show obj
+  -- cond <- hashMapToString $ HashMap.fromList [(pack "k1", DA.String (Text.pack ("2000")))]
+  -- contextValue <- evalCtx "test" cond
+  -- let objectify = contextValue
+  -- case contextValue of
+  --   Left err -> putStrLn $ "Error: " <> err
+  --   Right obj -> putStrLn $ "Object: " <> show obj
   -- putStrLn $ "contextValue: " <> show contextValue
   -- value <- (hashMapToString (fromMaybe (HashMap.fromList [(pack "defaultKey", DA.String (Text.pack ("defaultValue")))]) contextValue))
   -- putStrLn $ "contextValueEvaluated: " <> show value
