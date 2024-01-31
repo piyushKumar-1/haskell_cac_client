@@ -23,8 +23,6 @@ import Prelude as P
 import qualified Data.ByteString.Lazy as BL
 import qualified Data.Text.Encoding as TE
 import Control.Monad
-import System.Environment as Se
-
 
 foreign import ccall "init_cac_clients" init_cac_clients :: CString -> CULong -> Ptr CString -> CInt -> IO (Ptr CULong)
 
@@ -118,6 +116,16 @@ initSuperPositionClient host interval tenants = do
   _ <- initSuperPositionClients host' (fromIntegral interval) arr2 (fromIntegral tenantsCount)
   Control.Monad.void $ mapM (\tenant -> forkOS (run_polling_updates tenant)) arr1
 
+runSuperPositionPolling :: [String] -> IO ()
+runSuperPositionPolling  tenants = do
+  arr1 <- mapM stringToCString tenants
+  Control.Monad.void $ mapM (\tenant -> forkOS (run_polling_updates tenant)) arr1
+
+startCACPolling :: [String] -> IO ()
+startCACPolling tenants = do
+  arr1 <- mapM stringToCString tenants
+  Control.Monad.void $ mapM (\tenant -> forkOS (start_polling_updates tenant)) arr1
+
 initializeClients :: (String, Int, [String]) -> (String, Int, [String]) -> IO ()
 initializeClients (host1,interval1,tenants1) (host2,interval2,tenants2) = do
   initCACClient host1 interval1 tenants1
@@ -138,14 +146,14 @@ convertTextToObject txt = do
 main :: IO ()
 main = do
   putStrLn "Starting Haskell client..."
-  arr1 <- mapM stringToCString ["ltsdefault", "atlas_driver_offer_bpp_v2", "atlas_app_v2","atlas_lts"]
-  arr2 <- newArray arr1
-  hostEnv <- Se.lookupEnv "HOST"
-  host <- stringToCString $ fromMaybe "http://localhost:8080" hostEnv
-  _ <- initCacClients host 10 arr2 (fromIntegral (P.length arr1))
-  _ <- initSuperPositionClients host 1 arr2 (fromIntegral (P.length arr1))
-  _ <- mapM (\tenant -> forkOS (run_polling_updates tenant)) arr1
-  _ <- mapM (\tenant -> forkOS (start_polling_updates tenant)) arr1
+  -- arr1 <- mapM stringToCString ["ltsdefault", "atlas_driver_offer_bpp_v2", "atlas_app_v2","atlas_lts"]
+  -- arr2 <- newArray arr1
+  -- hostEnv <- Se.lookupEnv "HOST"
+  -- host <- stringToCString $ fromMaybe "http://localhost:8080" hostEnv
+  -- _ <- initCacClients host 10 arr2 (fromIntegral (P.length arr1))
+  -- _ <- initSuperPositionClients host 1 arr2 (fromIntegral (P.length arr1))
+  -- _ <- mapM (\tenant -> forkOS (run_polling_updates tenant)) arr1
+  -- _ <- mapM (\tenant -> forkOS (start_polling_updates tenant)) arr1
   -- tenant1 <- stringToCString "test"
   -- tenant2 <- stringToCString "dev"
   -- cond <- hashMapToString $ HashMap.fromList [(pack "k1", DA.String (Text.pack ("2000")))]
