@@ -100,32 +100,28 @@ cStringToText cStr = pack <$> peekCString cStr
 parseJsonToHashMap :: Text -> Maybe MyHashMap
 parseJsonToHashMap txt = DA.decode . BS.fromStrict . encodeUtf8 $ txt
 
-initializeClients :: Bool -> Maybe (String, Int, [String]) -> Bool -> Maybe (String, Int, [String]) -> IO ()
-initializeClients initCac cacConf initSuper superConf = do
-  case initCac of 
-    True ->
-      case cacConf of
-        Just (host, interval, tenants) -> do
-          tenantsCount <- return $ P.length tenants
-          arr1 <- mapM stringToCString tenants
-          arr2 <- newArray arr1
-          host' <- stringToCString host
-          _ <- initCacClients host' (fromIntegral interval) arr2 (fromIntegral tenantsCount)
-          Control.Monad.void $ mapM (\tenant -> forkOS (start_polling_updates tenant)) arr1
-        Nothing ->  error "CAC configuration not provided"
-    _ -> return ()
-  case initSuper of
-    True ->
-      case superConf of
-        Just (host, interval, tenants) -> do
-          tenantsCount <- return $ P.length tenants
-          arr1 <- mapM stringToCString tenants
-          arr2 <- newArray arr1
-          host' <- stringToCString host
-          _ <- initSuperPositionClients host' (fromIntegral interval) arr2 (fromIntegral tenantsCount)
-          Control.Monad.void $ mapM (\tenant -> forkOS (run_polling_updates tenant)) arr1
-        Nothing -> error "Superposition configuration not provided"
-    _ -> return ()
+initCACClient :: String -> Int -> [String] -> IO ()
+initCACClient host interval tenants = do
+  tenantsCount <- return $ P.length tenants
+  arr1 <- mapM stringToCString tenants
+  arr2 <- newArray arr1
+  host' <- stringToCString host
+  _ <- initCacClients host' (fromIntegral interval) arr2 (fromIntegral tenantsCount)
+  Control.Monad.void $ mapM (\tenant -> forkOS (start_polling_updates tenant)) arr1
+
+initSuperPositionClient :: String -> Int -> [String] -> IO ()
+initSuperPositionClient host interval tenants = do
+  tenantsCount <- return $ P.length tenants
+  arr1 <- mapM stringToCString tenants
+  arr2 <- newArray arr1
+  host' <- stringToCString host
+  _ <- initSuperPositionClients host' (fromIntegral interval) arr2 (fromIntegral tenantsCount)
+  Control.Monad.void $ mapM (\tenant -> forkOS (run_polling_updates tenant)) arr1
+
+initializeClients :: (String, Int, [String]) -> (String, Int, [String]) -> IO ()
+initializeClients (host1,interval1,tenants1) (host2,interval2,tenants2) = do
+  initCACClient host1 interval1 tenants1
+  initSuperPositionClient host2 interval2 tenants2
 
 convertTextToObject :: Text -> Either String Object
 convertTextToObject txt = do
