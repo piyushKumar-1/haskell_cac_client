@@ -4,6 +4,14 @@
 {-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE ForeignFunctionInterface #-}
 {-# LANGUAGE StandaloneDeriving #-}
+{-# LANGUAGE DerivingStrategies #-}
+{-# LANGUAGE DuplicateRecordFields #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE StandaloneDeriving #-}
+{-# LANGUAGE TemplateHaskell #-}
+{-# OPTIONS_GHC -Wno-orphans #-}
+{-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
+{-# OPTIONS_GHC -Wwarn=identities #-}
 
 module Client.Main where
 
@@ -23,6 +31,10 @@ import Prelude as P
 import qualified Data.ByteString.Lazy as BL
 import qualified Data.Text.Encoding as TE
 import Control.Monad
+import System.Environment as Se
+import GHC.Generics
+import qualified Data.ByteString.Lazy.Char8 as  DB
+import Data.Text.Encoding as DT
 
 foreign import ccall "init_cac_clients" init_cac_clients :: CString -> CULong -> Ptr CString -> CInt -> IO (Ptr CULong)
 
@@ -38,6 +50,8 @@ foreign import ccall "run_polling_updates" run_polling_updates :: CString -> IO 
 
 foreign import ccall "start_polling_updates" start_polling_updates :: CString -> IO ()
 
+foreign import ccall "get_variants" get_variants :: CString -> CString -> CInt -> IO (Ptr CChar)
+
 initCacClients :: CString -> CULong -> Ptr CString -> CInt -> IO (ForeignPtr CULong)
 initCacClients hostname polling_interval_secs tenants tenants_count = do
   resPtr <- init_cac_clients hostname polling_interval_secs tenants tenants_count
@@ -47,6 +61,16 @@ initSuperPositionClients :: CString -> CULong -> Ptr CString -> CInt -> IO (Fore
 initSuperPositionClients hostname polling_interval tenants tenants_count = do
   resPtr <- init_superposition_clients hostname polling_interval tenants tenants_count
   newForeignPtr_ resPtr
+
+
+getVariants :: String -> String -> Int -> IO Value
+getVariants tenant context toss = do
+  tenant' <- stringToCString tenant
+  context' <- stringToCString context
+  resPtr <- get_variants tenant' context' $ fromIntegral toss
+  resPtr' <- freeJsonData resPtr
+  result <- withForeignPtr resPtr' cStringToText
+  return $ toJSON result
 
 evalCtx :: String -> String -> IO (Either String Object)
 evalCtx tenant context = do
@@ -143,26 +167,51 @@ convertTextToObject txt = do
         _ -> Left "Text does not represent a JSON object"
 -- intiateClients :: {super, interval, d} -> forkingInterval -> -> IO ()
 
+data AvgSpeedOfVechilePerKm = AvgSpeedOfVechilePerKm -- FIXME make datatype to [(Variant, Kilometers)]
+  { sedan :: Kilometers,
+    suv :: Kilometers,
+    hatchback :: Kilometers,
+    autorickshaw :: Kilometers,
+    taxi :: Kilometers,
+    taxiplus :: Kilometers
+  }
+  deriving (Generic, Show, FromJSON, ToJSON, Read)
+
+newtype Kilometers = Kilometers
+  { getKilometers :: Int
+  }
+  deriving newtype (Show, Read, Num, Eq, Ord, Enum, Real, Integral, FromJSON, ToJSON)
+
 main :: IO ()
 main = do
   putStrLn "Starting Haskell client..."
-  -- arr1 <- mapM stringToCString ["ltsdefault", "atlas_driver_offer_bpp_v2", "atlas_app_v2","atlas_lts"]
-  -- arr2 <- newArray arr1
-  -- hostEnv <- Se.lookupEnv "HOST"
-  -- host <- stringToCString $ fromMaybe "http://localhost:8080" hostEnv
-  -- _ <- initCacClients host 10 arr2 (fromIntegral (P.length arr1))
-  -- _ <- initSuperPositionClients host 1 arr2 (fromIntegral (P.length arr1))
-  -- _ <- mapM (\tenant -> forkOS (run_polling_updates tenant)) arr1
-  -- _ <- mapM (\tenant -> forkOS (start_polling_updates tenant)) arr1
+  arr1 <- mapM stringToCString ["test", "dev"]
+  arr2 <- newArray arr1
+  hostEnv <- Se.lookupEnv "HOST"
+  host <- stringToCString $ fromMaybe "http://localhost:8080" hostEnv
+  _ <- initCacClients host 10 arr2 (fromIntegral (P.length arr1))
+  _ <- initSuperPositionClients host 1 arr2 (fromIntegral (P.length arr1))
+  _ <- mapM (\tenant -> forkOS (run_polling_updates tenant)) arr1
+  _ <- mapM (\tenant -> forkOS (start_polling_updates tenant)) arr1
   -- tenant1 <- stringToCString "test"
   -- tenant2 <- stringToCString "dev"
   -- cond <- hashMapToString $ HashMap.fromList [(pack "k1", DA.String (Text.pack ("2000")))]
   -- contextValue <- evalCtx "test" cond
-  -- let objectify = contextValue
+  -- -- let objectify = contextValue
   -- case contextValue of
   --   Left err -> putStrLn $ "Error: " <> err
   --   Right obj -> putStrLn $ "Object: " <> show obj
-  -- putStrLn $ "contextValue: " <> show contextValue
+  -- let json' =  String (Text.pack "{sedan: 30, suv: 30, hatchback: 0, autorickshaw: 0, taxi: 0, taxiplus: 0}")
+  -- let jsonString = case json' of
+  --         DA.String str ->
+  --           putStrLn $ "str: " <> 
+  --           BL.fromStrict $  DT.encodeUtf8 str
+  --         _ ->BL.fromStrict $  DT.encodeUtf8 $ Text.pack ""
+  -- putStrLn $ "json: " <> show json'
+  -- putStrLn $ "jsonString: " <> show jsonString
+  -- let ans =  (decode jsonString) :: (Maybe AvgSpeedOfVechilePerKm)
+
+  -- putStrLn $ "ans: " <> show ans
   -- value <- (hashMapToString (fromMaybe (HashMap.fromList [(pack "defaultKey", DA.String (Text.pack ("defaultValue")))]) contextValue))
   -- putStrLn $ "contextValueEvaluated: " <> show value
   -- result1 <- evalCtx tenant1 context >>= \evalCtx' -> withForeignPtr evalCtx' cStringToText
@@ -171,6 +220,6 @@ main = do
   -- let final2 = fromMaybe defaultHashMap $ parseJsonToHashMap result2
   -- putStrLn $ ("final1 is " <> show final1 <> " final2 is " <> show final2)
   -- _ <- evalCtx tenant context >>= \evalCtx' -> withForeignPtr evalCtx' peekCString >>= putStrLn
-  -- context1 <- stringToCString "{\"merchantId\":\"random\"}"
+  -- context1 <- stringToCString "{merchantId\":\"random\"}"
   -- _ <- evalExperiment tenant context1 23 >>= \evalCtx' -> withForeignPtr evalCtx' peekCString >>= putStrLn
   putStrLn "created the clients and started polling updates..."

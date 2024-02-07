@@ -156,6 +156,11 @@ fn serialize_map_to_json(map: &Map<String, Value>) -> Result<CString, serde_json
         .map(|json_str| CString::new(json_str).expect("CString::new failed"))
 }
 
+fn serialize_vec_to_json(vec: &Vec<String>) -> Result<CString, serde_json::Error> {
+    serde_json::to_string(vec)
+        .map(|json_str| CString::new(json_str).expect("CString::new failed"))
+}
+
 #[no_mangle]
 pub extern "C" fn eval_ctx(c_tenant: *const c_char, ctx_json: *const c_char) -> *const c_char {
     let tenant = convert_c_str_to_rust_str(c_tenant);
@@ -188,6 +193,25 @@ fn  c_char_to_json(ptr: *const c_char) -> Result<Value, String> {
         Err(e) => Err(e.to_string()), // Convert the error to YourErrorType
     }
     
+}
+
+#[no_mangle]
+pub extern "C" fn get_variants(c_tenant: *const c_char, context: *const c_char, toss: c_int) -> *const c_char {
+    let ctx_str = c_char_to_json(context).expect("Failed to parse the context");
+    let toss_value = toss as i8;
+    let rt = Runtime::new().unwrap();
+    let tenant = convert_c_str_to_rust_str(c_tenant);
+    let sp_client = rt.block_on (async{sp::CLIENT_FACTORY
+        .get_client(tenant.clone())
+        .await
+        .map_err(|e| {
+            log::error!("{}: {}", tenant, e);
+            format!("{}: Failed to get cac client", tenant)
+        })}).expect("Failed to get superposition client");
+    let variant_ids = rt.block_on(async{sp_client.get_applicable_variant(&ctx_str, toss_value).await});
+    let searialized_string = serialize_vec_to_json(&variant_ids).expect("JSON serialization failed");
+    let c_string = CString::new(searialized_string).expect("Failed to create CString");
+    return c_string.into_raw();
 }
 
 #[no_mangle]
