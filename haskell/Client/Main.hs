@@ -52,6 +52,8 @@ foreign import ccall "start_polling_updates" start_polling_updates :: CString ->
 
 foreign import ccall "get_variants" get_variants :: CString -> CString -> CInt -> IO (Ptr CChar)
 
+foreign import ccall "is_experiments_running" is_experiments_running :: CString -> IO CInt
+
 initCacClients :: CString -> CULong -> Ptr CString -> CInt -> IO (ForeignPtr CULong)
 initCacClients hostname polling_interval_secs tenants tenants_count = do
   resPtr <- init_cac_clients hostname polling_interval_secs tenants tenants_count
@@ -61,6 +63,12 @@ initSuperPositionClients :: CString -> CULong -> Ptr CString -> CInt -> IO (Fore
 initSuperPositionClients hostname polling_interval tenants tenants_count = do
   resPtr <- init_superposition_clients hostname polling_interval tenants tenants_count
   newForeignPtr_ resPtr
+
+isExperimentsRunning :: String -> IO Bool
+isExperimentsRunning tenant = do
+  tenant' <- stringToCString tenant
+  res <- is_experiments_running tenant'
+  return $ res == 1
 
 
 getVariants :: String -> String -> Int -> IO Value

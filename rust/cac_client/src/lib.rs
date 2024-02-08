@@ -215,6 +215,24 @@ pub extern "C" fn get_variants(c_tenant: *const c_char, context: *const c_char, 
 }
 
 #[no_mangle]
+pub extern "C" fn is_experiments_running(c_tenant: *const c_char) -> c_int {
+    let rt = Runtime::new().unwrap();
+    let tenant = convert_c_str_to_rust_str(c_tenant);
+    let sp_client = rt.block_on (async{sp::CLIENT_FACTORY
+        .get_client(tenant.clone())
+        .await
+        .map_err(|e| {
+            log::error!("{}: {}", tenant, e);
+            format!("{}: Failed to get cac client", tenant)
+        })}).expect("Failed to get superposition client");
+    let running_experiments = rt.block_on(async{sp_client.get_running_experiments().await});
+    if running_experiments.len() > 0 {
+        return 1;
+    }
+    return 0;
+}
+
+#[no_mangle]
 pub extern "C" fn eval_experiment(c_tenant: *const c_char, context: *const c_char, toss: c_int) -> *const c_char {
     let ctx_str = c_char_to_json(context).expect("Failed to parse the context");
     let toss_value = toss as i8;
