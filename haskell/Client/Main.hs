@@ -156,7 +156,7 @@ startCACPolling tenants = do
   arr1 <- mapM stringToCString tenants
   Control.Monad.void $ mapM (\tenant -> forkOS (start_polling_updates tenant)) arr1
 
-initializeClients :: (String, Int, [String]) -> (String, Int, [String]) -> IO ()
+initializeClients :: (String, Int, [String]) -> (String, Int, [String]) -> IO Int
 initializeClients (host1,interval1,tenants1) (host2,interval2,tenants2) = do
   initCACClient host1 interval1 tenants1
   initSuperPositionClient host2 interval2 tenants2
