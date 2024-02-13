@@ -128,23 +128,23 @@ cStringToText cStr = pack <$> peekCString cStr
 parseJsonToHashMap :: Text -> Maybe MyHashMap
 parseJsonToHashMap txt = DA.decode . BS.fromStrict . encodeUtf8 $ txt
 
-initCACClient :: String -> Int -> [String] -> IO ()
+initCACClient :: String -> Int -> [String] -> IO Int
 initCACClient host interval tenants = do
   tenantsCount <- return $ P.length tenants
   arr1 <- mapM stringToCString tenants
   arr2 <- newArray arr1
   host' <- stringToCString host
-  _ <- initCacClients host' (fromIntegral interval) arr2 (fromIntegral tenantsCount)
-  Control.Monad.void $ mapM (\tenant -> forkOS (start_polling_updates tenant)) arr1
+  x <- initCacClients host' (fromIntegral interval) arr2 (fromIntegral tenantsCount)
+  return $ fromIntegral x
 
-initSuperPositionClient :: String -> Int -> [String] -> IO ()
+initSuperPositionClient :: String -> Int -> [String] -> IO Int
 initSuperPositionClient host interval tenants = do
   tenantsCount <- return $ P.length tenants
   arr1 <- mapM stringToCString tenants
   arr2 <- newArray arr1
   host' <- stringToCString host
-  _ <- initSuperPositionClients host' (fromIntegral interval) arr2 (fromIntegral tenantsCount)
-  Control.Monad.void $ mapM (\tenant -> forkOS (run_polling_updates tenant)) arr1
+  x <- initSuperPositionClients host' (fromIntegral interval) arr2 (fromIntegral tenantsCount)
+  return $ fromIntegral x
 
 runSuperPositionPolling :: [String] -> IO ()
 runSuperPositionPolling  tenants = do
