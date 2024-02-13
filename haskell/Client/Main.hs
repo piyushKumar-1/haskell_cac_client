@@ -36,13 +36,13 @@ import GHC.Generics
 import qualified Data.ByteString.Lazy.Char8 as  DB
 import Data.Text.Encoding as DT
 
-foreign import ccall "init_cac_clients" init_cac_clients :: CString -> CULong -> Ptr CString -> CInt -> IO (Ptr CULong)
+foreign import ccall "init_cac_clients" init_cac_clients :: CString -> CULong -> Ptr CString -> CInt -> IO  CInt
 
 foreign import ccall "eval_ctx" eval_ctx :: CString -> CString -> IO (Ptr CChar)
 
 foreign import ccall "&free_json_data" free_json_data :: FunPtr (Ptr CChar -> IO ())
 
-foreign import ccall "init_superposition_clients" init_superposition_clients :: CString -> CULong -> Ptr CString -> CInt -> IO (Ptr CULong)
+foreign import ccall "init_superposition_clients" init_superposition_clients :: CString -> CULong -> Ptr CString -> CInt -> IO CInt
 
 foreign import ccall "eval_experiment" eval_experiment :: CString -> CString -> CInt -> IO (Ptr CChar)
 
@@ -54,15 +54,13 @@ foreign import ccall "get_variants" get_variants :: CString -> CString -> CInt -
 
 foreign import ccall "is_experiments_running" is_experiments_running :: CString -> IO CInt
 
-initCacClients :: CString -> CULong -> Ptr CString -> CInt -> IO (ForeignPtr CULong)
+initCacClients :: CString -> CULong -> Ptr CString -> CInt -> IO  CInt
 initCacClients hostname polling_interval_secs tenants tenants_count = do
-  resPtr <- init_cac_clients hostname polling_interval_secs tenants tenants_count
-  newForeignPtr_ resPtr
+  init_cac_clients hostname polling_interval_secs tenants tenants_count
 
-initSuperPositionClients :: CString -> CULong -> Ptr CString -> CInt -> IO (ForeignPtr CULong)
+initSuperPositionClients :: CString -> CULong -> Ptr CString -> CInt -> IO CInt
 initSuperPositionClients hostname polling_interval tenants tenants_count = do
-  resPtr <- init_superposition_clients hostname polling_interval tenants tenants_count
-  newForeignPtr_ resPtr
+  init_superposition_clients hostname polling_interval tenants tenants_count
 
 isExperimentsRunning :: String -> IO Bool
 isExperimentsRunning tenant = do
@@ -190,17 +188,25 @@ newtype Kilometers = Kilometers
   }
   deriving newtype (Show, Read, Num, Eq, Ord, Enum, Real, Integral, FromJSON, ToJSON)
 
+connect :: IO()
+connect = do
+    arr1 <- mapM stringToCString ["test", "dev"]
+    arr2 <- newArray arr1
+    hostEnv <- Se.lookupEnv "HOST"
+    host <- stringToCString $ fromMaybe "http://localhost:8080" hostEnv
+    x <- initCacClients host 10 arr2 (fromIntegral (P.length arr1))
+    putStrLn $ "x: " <> show x
+    y <- initSuperPositionClients host 1 arr2 (fromIntegral (P.length arr1))
+    putStrLn $ "y: " <> show y
+    _ <- mapM (\tenant -> forkOS (run_polling_updates tenant)) arr1
+    _ <-  mapM (\tenant -> forkOS (start_polling_updates tenant)) arr1
+    pure ()
+
 main :: IO ()
 main = do
   putStrLn "Starting Haskell client..."
-  arr1 <- mapM stringToCString ["test", "dev"]
-  arr2 <- newArray arr1
-  hostEnv <- Se.lookupEnv "HOST"
-  host <- stringToCString $ fromMaybe "http://localhost:8080" hostEnv
-  _ <- initCacClients host 10 arr2 (fromIntegral (P.length arr1))
-  _ <- initSuperPositionClients host 1 arr2 (fromIntegral (P.length arr1))
-  _ <- mapM (\tenant -> forkOS (run_polling_updates tenant)) arr1
-  _ <- mapM (\tenant -> forkOS (start_polling_updates tenant)) arr1
+  _ <- forkOS connect
+ 
   -- tenant1 <- stringToCString "test"
   -- tenant2 <- stringToCString "dev"
   -- cond <- hashMapToString $ HashMap.fromList [(pack "k1", DA.String (Text.pack ("2000")))]

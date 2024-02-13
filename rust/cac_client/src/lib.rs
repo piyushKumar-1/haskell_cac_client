@@ -21,14 +21,13 @@ use std::{
     sync::{Arc, RwLock},
     time::{Duration, UNIX_EPOCH, SystemTime},
 };
-
+use tokio::{runtime::Runtime, task};
 use utils::core::MapError;
 use tokio::sync::oneshot;
 use std::ffi::{CStr, CString};
 use std::os::raw::{c_char, c_uint, c_ulonglong, c_int};
 
 use superposition_client as sp;
-use tokio::runtime::Runtime;
 
 type FutureId = u64;
 
@@ -67,56 +66,67 @@ fn convert_to_rust_duration(secs: c_ulonglong, nanos: c_uint) -> std::time::Dura
 }
 
 #[no_mangle]
-pub extern "C" fn init_cac_clients(hostname: *const c_char, polling_interval_secs : c_ulonglong, tenants : *const *const c_char, tenants_count: c_uint) -> *const u64 {
+pub extern "C" fn init_cac_clients(hostname: *const c_char, polling_interval_secs : c_ulonglong, tenants : *const *const c_char, tenants_count: c_uint) -> c_int {
     let (tx, rx) = oneshot::channel();
     let cac_hostname = convert_c_str_to_rust_str(hostname);
     let polling_interval = convert_to_rust_duration(polling_interval_secs, 0);
     let cac_tenants = convert_c_array_to_vec(tenants, tenants_count);
     
 
-    let rt = Runtime::new().unwrap();
+    // let rt = Runtime::new().unwrap();
 
     // Spawn an async task
-    rt.block_on(async {
+    let local = task::LocalSet::new();
+    local.block_on(&Runtime::new().unwrap(), async move {
 
         for tenant in cac_tenants {
-            CLIENT_FACTORY
+            match CLIENT_FACTORY
                 .create_client(
                     tenant.to_string(),
                     polling_interval,
                     cac_hostname.to_string(),
                 )
-                .await
-                .expect(format!("{}: Failed to acquire cac_client", tenant).as_str());
+                .await {
+                    Ok(x) => {
+                        println!("Client created successfully {:?}", x);
+                    },
+                    Err(err) => {
+                        // update_last_error(err);
+                        println!("Failed to create client: {:?}", err);
+                        return 1;
+                    }
+                };
         }
         tx.send("CLIENTS_CREATED").unwrap();
-    });
-    let id = gen_unique_id();
-    STATUSES.write().unwrap().insert(id, rx);
-    &id
+        return 0;
+    })
 }
 
 #[no_mangle]
-pub extern "C" fn init_superposition_clients(hostname: *const c_char, polling_frequency : c_ulonglong, tenants : *const *const c_char, tenants_count: c_uint) -> *const u64 {
+pub extern "C" fn init_superposition_clients(hostname: *const c_char, polling_frequency : c_ulonglong, tenants : *const *const c_char, tenants_count: c_uint) -> c_int {
     let (tx, rx) = oneshot::channel();
     let hostname = convert_c_str_to_rust_str(hostname);
     let poll_frequency = polling_frequency as u64;
     let cac_tenants = convert_c_array_to_vec(tenants, tenants_count);
-    let rt = Runtime::new().unwrap();
-    rt.block_on(async {
-
+    let local = task::LocalSet::new();
+    local.block_on(&Runtime::new().unwrap(), async move {
         for tenant in cac_tenants {
-                sp::CLIENT_FACTORY
+                match sp::CLIENT_FACTORY
                     .create_client(tenant.to_string(), poll_frequency, hostname.to_string())
-                    .await
-                    .expect(format!("{}: Failed to acquire superposition_client", tenant).as_str());
+                    .await {
+                        Ok(x) => {
+                            println!("Client created successfully {:?}", x);
+                        },
+                        Err(err) => {
+                            // update_last_error(err);
+                            println!("Failed to create client: {:?}", err);
+                            return 1;
+                        }
+                }      
         }
         tx.send("CLIENTS_CREATED").unwrap();
-
-    });
-    let id = gen_unique_id();
-    STATUSES.write().unwrap().insert(id, rx);
-    &id
+        return 0;
+    })
 }
 
 #[no_mangle]
@@ -280,6 +290,7 @@ pub struct Config {
 }
 
 #[derive(Clone)]
+#[derive(Debug)]
 pub struct Client {
     tenant: String,
     reqw: Data<reqwest::RequestBuilder>,
