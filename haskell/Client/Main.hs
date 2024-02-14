@@ -54,6 +54,8 @@ foreign import ccall "get_variants" get_variants :: CString -> CString -> CInt -
 
 foreign import ccall "is_experiments_running" is_experiments_running :: CString -> IO CInt
 
+foreign import ccall "create_client_from_config" create_client_from_config :: CString -> CULong -> CString -> CString -> IO CInt
+
 initCacClients :: CString -> CULong -> Ptr CString -> CInt -> IO  CInt
 initCacClients hostname polling_interval_secs tenants tenants_count = do
   init_cac_clients hostname polling_interval_secs tenants tenants_count
@@ -161,6 +163,15 @@ initializeClients (host1,interval1,tenants1) (host2,interval2,tenants2) = do
   initCACClient host1 interval1 tenants1
   initSuperPositionClient host2 interval2 tenants2
 
+createClientFromConfig :: String -> Int -> String -> String -> IO Int
+createClientFromConfig tenant interval  config hostname = do
+  host' <- stringToCString hostname
+  interval' <- return $ fromIntegral interval
+  tenant' <- stringToCString tenant
+  config' <- stringToCString config
+  status <- create_client_from_config tenant' interval'  config' host'
+  return $ fromIntegral status
+
 convertTextToObject :: Text -> Either String Object
 convertTextToObject txt = do
     let bs = BL.fromStrict $ TE.encodeUtf8 txt
@@ -196,10 +207,10 @@ connect = do
     host <- stringToCString $ fromMaybe "http://localhost:8080" hostEnv
     x <- initCacClients host 10 arr2 (fromIntegral (P.length arr1))
     putStrLn $ "x: " <> show x
-    y <- initSuperPositionClients host 1 arr2 (fromIntegral (P.length arr1))
-    putStrLn $ "y: " <> show y
-    _ <- mapM (\tenant -> forkOS (run_polling_updates tenant)) arr1
-    _ <-  mapM (\tenant -> forkOS (start_polling_updates tenant)) arr1
+    -- y <- initSuperPositionClients host 1 arr2 (fromIntegral (P.length arr1))
+    -- putStrLn $ "y: " <> show y
+    -- _ <- mapM (\tenant -> forkOS (run_polling_updates tenant)) arr1
+    -- _ <-  mapM (\tenant -> forkOS (start_polling_updates tenant)) arr1
     pure ()
 
 main :: IO ()
@@ -207,10 +218,10 @@ main = do
   putStrLn "Starting Haskell client..."
   _ <- forkOS connect
  
-  -- tenant1 <- stringToCString "test"
+  tenant1 <- stringToCString "test"
   -- tenant2 <- stringToCString "dev"
-  -- cond <- hashMapToString $ HashMap.fromList [(pack "k1", DA.String (Text.pack ("2000")))]
-  -- contextValue <- evalCtx "test" cond
+  cond <- hashMapToString $ HashMap.fromList [(pack "k1", DA.String (Text.pack ("2000")))]
+  contextValue <- evalCtx "test" cond
   -- -- let objectify = contextValue
   -- case contextValue of
   --   Left err -> putStrLn $ "Error: " <> err

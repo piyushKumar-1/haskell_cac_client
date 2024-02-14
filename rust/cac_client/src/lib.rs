@@ -187,6 +187,22 @@ pub extern "C" fn eval_ctx(c_tenant: *const c_char, ctx_json: *const c_char) -> 
 
 }
 
+fn new_c_char_to_json(json: *const c_char) -> Result<Value, String> {
+    let c_str = unsafe { CStr::from_ptr(json) };
+    let result = c_str.to_str().map_err(|e| e.to_string());
+    match result {
+        Ok(str_slice) => {
+            println!("str_slice: {}", str_slice);
+            serde_json::from_str(str_slice).map_err(|e| e.to_string())
+        }
+        Err(e) => {
+            println!("Error not able to convert to json: {}", e);
+            Err(e.to_string()) // Convert the error to YourErrorType
+        }
+    }
+
+}
+
 fn  c_char_to_json(ptr: *const c_char) -> Result<Value, String> {
     // Ensure the pointer is not null
     assert!(!ptr.is_null());
@@ -276,6 +292,42 @@ pub extern "C" fn free_json_data(s: *mut c_char) {
     }
 }
 
+#[no_mangle]
+pub extern "C" fn create_client_from_config(c_tenant: *const c_char, polling_interval_secs: c_ulonglong, config: *const c_char, hostname: *const c_char) -> c_int {
+    let tenant = convert_c_str_to_rust_str(c_tenant);
+    let polling_interval = convert_to_rust_duration(polling_interval_secs, 0);
+    let config_str = c_char_to_json(config);
+    match config_str {
+        Ok(x) => {
+            let hostname_str = convert_c_str_to_rust_str(hostname);
+            let rt = Runtime::new().unwrap();
+            rt.block_on(async {
+                match CLIENT_FACTORY
+                    .create_client_with_config(
+                        tenant.to_string(),
+                        polling_interval,
+                        x,
+                        hostname_str.to_string()
+                    ) {
+                        Ok(x) => {
+                            println!("Client created successfully ");
+                        },
+                        Err(err) => {
+                            // update_last_error(err);
+                            println!("Failed to create client: {:?}", err);
+                            return 1;
+                        }
+                    };
+                return 0;
+            })
+        },
+        Err(e) => {
+            println!("Failed to parse the config: {} {:?} str", e, config);
+            return 1;
+        }
+    }
+}
+
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct Context {
     pub condition: Value,
@@ -346,6 +398,30 @@ impl Client {
         //     client.clone().start_polling_update().await;
         // }
         Ok(client)
+    }
+
+    pub fn new_with_config(
+        tenant: String,
+        polling_interval: Duration,
+        config: Value,
+        hostname: String
+    ) -> Self { 
+        let new_config1 = serde_json::from_value(config).unwrap();
+        let new_config2 = Data::new(RwLock::new(new_config1));
+        let reqw_client = reqwest::Client::builder().build().expect("Failed to build reqwest client");
+        let cac_endpoint = format!("{hostname}/config");
+        let reqw = reqw_client
+            .get(cac_endpoint)
+            .header("x-tenant", tenant.to_string());
+        Client {
+            tenant,
+            reqw: Data::new(reqw),
+            polling_interval,
+            last_modified: Data::new(RwLock::new(
+                DateTime::<Utc>::from(UNIX_EPOCH)
+            )),
+            config : new_config2,
+        }
     }
 
     async fn fetch(&self) -> Result<reqwest::Response, String> {
@@ -441,6 +517,37 @@ impl ClientFactory {
         );
         factory.insert(tenant.to_string(), client.clone());
         return Ok(client.clone());
+    }
+
+    pub fn create_client_with_config(
+        &self,
+        tenant: String,
+        polling_interval: Duration,
+        config: Value,
+        hostname: String
+    ) -> Result<Arc<Client>, String> {
+        let tenant_clone =  tenant.clone();
+        let mut factory = match self.write() {
+            Ok(factory) => factory,
+            Err(e) => {
+                log::error!("CAC_CLIENT_FACTORY: failed to acquire write lock {}", e);
+                return Err("CAC_CLIENT_FACTORY: Failed to create client".to_string());
+            }
+        };
+
+        if let Some(client) = factory.get(&tenant) {
+            return Ok(client.clone());
+        }
+
+        let client = Arc::new(
+            Client::new_with_config(
+                tenant,
+                polling_interval,
+                config,
+                hostname
+            ));
+        factory.insert(tenant_clone.to_string(), client.clone());
+        Ok(client.clone())
     }
 
     pub fn get_client(&self, tenant: String) -> Result<Arc<Client>, String> {
