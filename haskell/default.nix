@@ -35,6 +35,7 @@
       name = "cac-haskell-cac";
       shellHook = ''
         export DYLD_LIBRARY_PATH="${self'.packages.cac_client}/lib"
+        export LD_LIBRARY_PATH="${self'.packages.cac_client}/lib"
       '';
     };
   };

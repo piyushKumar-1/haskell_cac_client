@@ -174,13 +174,26 @@ fn serialize_vec_to_json(vec: &Vec<String>) -> Result<CString, serde_json::Error
 #[no_mangle]
 pub extern "C" fn eval_ctx(c_tenant: *const c_char, ctx_json: *const c_char) -> *const c_char {
     let tenant = convert_c_str_to_rust_str(c_tenant);
-    let cac_client = CLIENT_FACTORY.get_client(tenant.clone()).map_err(|e| {
+    let cac_client = match CLIENT_FACTORY.get_client(tenant.clone()).map_err(|e| {
         log::error!("{}: {}", tenant, e);
         format!("{}: Failed to get cac client", tenant)
-    }).expect("Failed to get cac client");
+    })
+    {
+        Ok(x) => x,
+        Err(e) => {
+            println!("Failed to get cac client: {:?}", e);
+            return CString::new("Failed to get cac client").expect("Failed to create CString").into_raw();
+        }
+    };
     let ctx_str = unsafe { CStr::from_ptr(ctx_json).to_str().unwrap() };
     let ctx_obj: Map<String, Value> = serde_json::from_str(ctx_str).unwrap();
-    let overrides = cac_client.eval(ctx_obj).expect("Failed to fetch the context");
+    let overrides = match cac_client.eval(ctx_obj) {
+        Ok(x) => x,
+        Err(e) => {
+            println!("Failed to evaluate the context: {:?}", e);
+            return CString::new("Failed to evaluate the context").expect("Failed to create CString").into_raw();
+        }
+    };
     let searialized_string = serialize_map_to_json(&overrides).expect("JSON serialization failed");
     let c_string = CString::new(searialized_string).expect("Failed to create CString");
     return c_string.into_raw();
@@ -270,18 +283,33 @@ pub extern "C" fn eval_experiment(c_tenant: *const c_char, context: *const c_cha
         .map_err(|e| {
             log::error!("{}: {}", tenant, e);
             format!("{}: Failed to get cac client", tenant)
-        })}).expect("Failed to get superposition client");
-    let variant_ids = rt.block_on(async{sp_client.get_applicable_variant(&ctx_str, toss_value).await});
-    let cac_client = CLIENT_FACTORY.get_client(tenant.clone()).map_err(|e| {
-        log::error!("{}: {}", tenant, e);
-        format!("{}: Failed to get cac client", tenant)
-    }).expect("Failed to get cac client");
-    let mut ctx: serde_json::Map<String, Value> = serde_json::from_value(json!(ctx_str)).expect("Failed to convert to a map");
-    ctx.insert(String::from("variantIds"), json!(variant_ids));
-    let overrides = cac_client.eval(ctx).expect("Failed to evaluate the context");
-    let searialized_string = serialize_map_to_json(&overrides).expect("JSON serialization failed");
-    let c_string = CString::new(searialized_string).expect("Failed to create CString");
-    return c_string.into_raw();
+        })});
+    match sp_client {
+        Ok(x) => {
+            let variant_ids = rt.block_on(async{x.get_applicable_variant(&ctx_str, toss_value).await});
+            let cac_client = match CLIENT_FACTORY.get_client(tenant.clone()).map_err(|e| {
+                log::error!("{}: {}", tenant, e);
+                format!("{}: Failed to get cac client", tenant)
+            })
+            {
+                Ok(x) => x,
+                Err(e) => {
+                    println!("Failed to get cac client: {:?}", e);
+                    return CString::new("Failed to get cac client").expect("Failed to create CString").into_raw();
+                }
+            };
+            let mut ctx: serde_json::Map<String, Value> = serde_json::from_value(json!(ctx_str)).expect("Failed to convert to a map");
+            ctx.insert(String::from("variantIds"), json!(variant_ids));
+            let overrides = cac_client.eval(ctx).expect("Failed to evaluate the context");
+            let searialized_string = serialize_map_to_json(&overrides).expect("JSON serialization failed");
+            let c_string = CString::new(searialized_string).expect("Failed to create CString");
+            return c_string.into_raw();
+        },
+        Err(e) => {
+            println!("Failed to get superposition client: {:?}", e);
+            return CString::new("Failed to get superposition client").expect("Failed to create CString").into_raw();
+        }
+    }
 }
 
 #[no_mangle]
