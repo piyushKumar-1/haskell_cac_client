@@ -156,7 +156,7 @@ pub extern "C" fn start_polling_updates(c_tenant: *const c_char) {
             .map_err(|e| {
                 log::error!("{}: {}", tenant, e);
                 format!("{}: Failed to get cac client", tenant)
-            }).expect("Failed to get superposition client");
+            }).expect("Failed to get cac client");
         client.start_polling_update().await;
     });
 }
@@ -257,13 +257,20 @@ pub extern "C" fn get_variants(c_tenant: *const c_char, context: *const c_char, 
 pub extern "C" fn is_experiments_running(c_tenant: *const c_char) -> c_int {
     let rt = Runtime::new().unwrap();
     let tenant = convert_c_str_to_rust_str(c_tenant);
-    let sp_client = rt.block_on (async{sp::CLIENT_FACTORY
+    let sp_client = match rt.block_on (async{sp::CLIENT_FACTORY
         .get_client(tenant.clone())
         .await
         .map_err(|e| {
             log::error!("{}: {}", tenant, e);
             format!("{}: Failed to get cac client", tenant)
-        })}).expect("Failed to get superposition client");
+        })})
+        {
+            Ok(x) => x,
+            Err(e) => {
+                println!("Failed to get superposition client: {:?}", e);
+                return 2;
+            }
+        };
     let running_experiments = rt.block_on(async{sp_client.get_running_experiments().await});
     if running_experiments.len() > 0 {
         return 1;
