@@ -262,7 +262,7 @@ pub extern "C" fn is_experiments_running(c_tenant: *const c_char) -> c_int {
         .await
         .map_err(|e| {
             log::error!("{}: {}", tenant, e);
-            format!("{}: Failed to get cac client", tenant)
+            format!("{}: Failed to get superposition client", tenant)
         })})
         {
             Ok(x) => x,
