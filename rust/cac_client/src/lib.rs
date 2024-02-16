@@ -289,7 +289,7 @@ pub extern "C" fn eval_experiment(c_tenant: *const c_char, context: *const c_cha
         .await
         .map_err(|e| {
             log::error!("{}: {}", tenant, e);
-            format!("{}: Failed to get cac client", tenant)
+            format!("{}: Failed to get superposition client", tenant)
         })});
     match sp_client {
         Ok(x) => {
@@ -345,11 +345,27 @@ pub extern "C" fn create_client_from_config(c_tenant: *const c_char, polling_int
                         hostname_str.to_string()
                     ) {
                         Ok(x) => {
-                            println!("Client created successfully ");
+                            println!("CAC Client created successfully ");
+                            match sp::CLIENT_FACTORY
+                                .create_client(
+                                    tenant.to_string(),
+                                    polling_interval.as_secs(),
+                                    hostname_str.to_string(),
+                                )
+                                .await {
+                                    Ok(x) => {
+                                        println!("Superposition Client created successfully ");
+                                    },
+                                    Err(err) => {
+                                        // update_last_error(err);
+                                        println!("Failed to create superposition client: {:?}", err);
+                                        return 1;
+                                    }
+                                };
                         },
                         Err(err) => {
                             // update_last_error(err);
-                            println!("Failed to create client: {:?}", err);
+                            println!("Failed to create cac client: {:?}", err);
                             return 1;
                         }
                     };
