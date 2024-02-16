@@ -41,13 +41,6 @@ lazy_static! {
     static ref RESULTS: SyncMap<FutureId, &'static str> = SyncMap::default();
 }
 
-fn gen_unique_id() -> u64 {
-    let start = SystemTime::now();
-    let since_the_epoch = start.duration_since(UNIX_EPOCH)
-        .expect("Time went backwards");
-    since_the_epoch.as_millis() as u64
-}
-
 fn convert_c_str_to_rust_str(c_str: *const c_char) -> String {
     unsafe {
         CStr::from_ptr(c_str).to_string_lossy().into_owned()
@@ -71,9 +64,6 @@ pub extern "C" fn init_cac_clients(hostname: *const c_char, polling_interval_sec
     let cac_hostname = convert_c_str_to_rust_str(hostname);
     let polling_interval = convert_to_rust_duration(polling_interval_secs, 0);
     let cac_tenants = convert_c_array_to_vec(tenants, tenants_count);
-    
-
-    // let rt = Runtime::new().unwrap();
 
     // Spawn an async task
     let local = task::LocalSet::new();
@@ -88,11 +78,11 @@ pub extern "C" fn init_cac_clients(hostname: *const c_char, polling_interval_sec
                 )
                 .await {
                     Ok(x) => {
-                        println!("Client created successfully {:?}", x);
+                        println!("CAC Client created successfully {:?}", x);
                     },
                     Err(err) => {
                         // update_last_error(err);
-                        println!("Failed to create client: {:?}", err);
+                        println!("Failed to create cac client: {:?}", err);
                         return 1;
                     }
                 };
@@ -115,11 +105,11 @@ pub extern "C" fn init_superposition_clients(hostname: *const c_char, polling_fr
                     .create_client(tenant.to_string(), poll_frequency, hostname.to_string())
                     .await {
                         Ok(x) => {
-                            println!("Client created successfully {:?}", x);
+                            println!("Superposition Client created successfully {:?}", x);
                         },
                         Err(err) => {
                             // update_last_error(err);
-                            println!("Failed to create client: {:?}", err);
+                            println!("Superposition Client Failed to create client: {:?}", err);
                             return 1;
                         }
                 }      
@@ -134,13 +124,20 @@ pub extern "C" fn run_polling_updates(c_tenant: *const c_char) {
     let rt = Runtime::new().unwrap();
     let tenant = convert_c_str_to_rust_str(c_tenant);
     rt.block_on(async {
-        let sp_client = sp::CLIENT_FACTORY
+        let sp_client = match rt.block_on (async{sp::CLIENT_FACTORY
             .get_client(tenant.clone())
             .await
             .map_err(|e| {
                 log::error!("{}: {}", tenant, e);
-                format!("{}: Failed to get cac client", tenant)
-            }).expect("Failed to get superposition client");
+                format!("{}: Failed to get superposition client", tenant)
+            })})
+            {
+                Ok(x) => x,
+                Err(e) => {
+                    println!("Failed to get superposition client: {:?}", e);
+                    return;
+                }
+            };
         sp_client.run_polling_updates().await;
     });
 }
@@ -151,12 +148,19 @@ pub extern "C" fn start_polling_updates(c_tenant: *const c_char) {
     let tenant = convert_c_str_to_rust_str(c_tenant);
     rt.block_on(async {
         
-        let client = CLIENT_FACTORY
+        let client = match CLIENT_FACTORY
             .get_client(tenant.clone())
             .map_err(|e| {
                 log::error!("{}: {}", tenant, e);
                 format!("{}: Failed to get cac client", tenant)
-            }).expect("Failed to get cac client");
+            })
+            {
+                Ok(x) => x,
+                Err(e) => {
+                    println!("Failed to get cac client: {:?}", e);
+                    return;
+                }
+            };
         client.start_polling_update().await;
     });
 }
@@ -200,22 +204,6 @@ pub extern "C" fn eval_ctx(c_tenant: *const c_char, ctx_json: *const c_char) -> 
 
 }
 
-fn new_c_char_to_json(json: *const c_char) -> Result<Value, String> {
-    let c_str = unsafe { CStr::from_ptr(json) };
-    let result = c_str.to_str().map_err(|e| e.to_string());
-    match result {
-        Ok(str_slice) => {
-            println!("str_slice: {}", str_slice);
-            serde_json::from_str(str_slice).map_err(|e| e.to_string())
-        }
-        Err(e) => {
-            println!("Error not able to convert to json: {}", e);
-            Err(e.to_string()) // Convert the error to YourErrorType
-        }
-    }
-
-}
-
 fn  c_char_to_json(ptr: *const c_char) -> Result<Value, String> {
     // Ensure the pointer is not null
     assert!(!ptr.is_null());
@@ -240,13 +228,20 @@ pub extern "C" fn get_variants(c_tenant: *const c_char, context: *const c_char, 
     let toss_value = toss as i8;
     let rt = Runtime::new().unwrap();
     let tenant = convert_c_str_to_rust_str(c_tenant);
-    let sp_client = rt.block_on (async{sp::CLIENT_FACTORY
+    let sp_client = match rt.block_on (async{sp::CLIENT_FACTORY
         .get_client(tenant.clone())
         .await
         .map_err(|e| {
             log::error!("{}: {}", tenant, e);
-            format!("{}: Failed to get cac client", tenant)
-        })}).expect("Failed to get superposition client");
+            format!("{}: Failed to get superposition client", tenant)
+        })})
+        {
+            Ok(x) => x,
+            Err(e) => {
+                println!("Failed to get superposition client: {:?}", e);
+                return CString::new("Failed to get superposition client").expect("Failed to create CString").into_raw();
+            }
+        };
     let variant_ids = rt.block_on(async{sp_client.get_applicable_variant(&ctx_str, toss_value).await});
     let searialized_string = serialize_vec_to_json(&variant_ids).expect("JSON serialization failed");
     let c_string = CString::new(searialized_string).expect("Failed to create CString");
