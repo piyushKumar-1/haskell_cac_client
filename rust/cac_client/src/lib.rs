@@ -124,13 +124,13 @@ pub extern "C" fn run_polling_updates(c_tenant: *const c_char) {
     let rt = Runtime::new().unwrap();
     let tenant = convert_c_str_to_rust_str(c_tenant);
     rt.block_on(async {
-        let sp_client = match rt.block_on (async{sp::CLIENT_FACTORY
+        let sp_client = match sp::CLIENT_FACTORY
             .get_client(tenant.clone())
             .await
             .map_err(|e| {
                 log::error!("{}: {}", tenant, e);
                 format!("{}: Failed to get superposition client", tenant)
-            })})
+            })
             {
                 Ok(x) => x,
                 Err(e) => {
