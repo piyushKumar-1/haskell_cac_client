@@ -160,7 +160,7 @@ startCACPolling tenants = do
 
 initializeClients :: (String, Int, [String]) -> (String, Int, [String]) -> IO Int
 initializeClients (host1,interval1,tenants1) (host2,interval2,tenants2) = do
-  initCACClient host1 interval1 tenants1
+  _ <- initCACClient host1 interval1 tenants1
   initSuperPositionClient host2 interval2 tenants2
 
 createClientFromConfig :: String -> Int -> String -> String -> IO Int
@@ -171,6 +171,21 @@ createClientFromConfig tenant interval  config hostname = do
   config' <- stringToCString config
   status <- create_client_from_config tenant' interval'  config' host'
   return $ fromIntegral status
+
+evalExperimentAsString :: String -> String -> Int -> IO (String)
+evalExperimentAsString tenant context toss = do
+  tenant' <- stringToCString tenant
+  context' <- stringToCString context
+  resPtr <- eval_experiment tenant' context' $ fromIntegral toss
+  resPtr' <- freeJsonData resPtr
+  result <- withForeignPtr resPtr' peekCString
+  return result
+
+makeNull :: Text -> Text 
+makeNull txt = 
+  let replaced = Text.replace (Text.pack "\"None\"") (Text.pack "null") txt
+  in 
+    Text.replace (Text.pack "\"Null\"") (Text.pack "null") replaced
 
 convertTextToObject :: Text -> Either String Object
 convertTextToObject txt = do
