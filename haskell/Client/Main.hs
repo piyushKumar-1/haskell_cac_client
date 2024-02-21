@@ -181,6 +181,15 @@ evalExperimentAsString tenant context toss = do
   result <- withForeignPtr resPtr' peekCString
   return result
 
+evalExperimentAsValue :: String -> String -> Int -> IO Value
+evalExperimentAsValue tenant context toss = do
+  tenant' <- stringToCString tenant
+  context' <- stringToCString context
+  resPtr <- eval_experiment tenant' context' $ fromIntegral toss
+  resPtr' <- freeJsonData resPtr
+  result <- withForeignPtr resPtr' cStringToText
+  return $ toJSON result
+
 makeNull :: Text -> Text 
 makeNull txt = 
   let replaced = Text.replace (Text.pack "\"None\"") (Text.pack "null") txt
