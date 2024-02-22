@@ -181,8 +181,8 @@ evalExperimentAsString tenant context toss = do
   context' <- stringToCString context
   resPtr <- eval_experiment tenant' context' $ fromIntegral toss
   resPtr' <- freeJsonData resPtr
-  result <- withForeignPtr resPtr' peekCString
-  return result
+  result <- withForeignPtr resPtr' cStringToText
+  return $ Text.unpack $ makeNull result
 
 evalExperimentAsValue :: String -> String -> Int -> IO Value
 evalExperimentAsValue tenant context toss = do
