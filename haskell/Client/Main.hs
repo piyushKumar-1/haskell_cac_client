@@ -17,6 +17,9 @@ module Client.Main where
 
 import Control.Concurrent
 import Data.Aeson as DA
+import Data.Aeson.Key as DAK
+import Data.Aeson.KeyMap as KM
+
 import qualified Data.ByteString.Lazy.Char8 as BS
 import Data.HashMap.Strict as HashMap
 import Data.Maybe
@@ -98,7 +101,7 @@ evalExperiment tenant context toss = do
   resPtr <- eval_experiment tenant' context' $ fromIntegral toss
   resPtr' <- freeJsonData resPtr
   result <- withForeignPtr resPtr' cStringToText
-  return $ convertTextToObject result
+  return $ convertTextToObject (makeNull result)
 
 freeJsonData :: Ptr CChar -> IO (ForeignPtr CChar)
 freeJsonData ptr = do
@@ -231,26 +234,25 @@ connect = do
     host <- stringToCString $ fromMaybe "http://localhost:8080" hostEnv
     x <- initCacClients host 10 arr2 (fromIntegral (P.length arr1))
     putStrLn $ "x: " <> show x
-    -- y <- initSuperPositionClients host 1 arr2 (fromIntegral (P.length arr1))
-    -- putStrLn $ "y: " <> show y
-    -- _ <- mapM (\tenant -> forkOS (run_polling_updates tenant)) arr1
-    -- _ <-  mapM (\tenant -> forkOS (start_polling_updates tenant)) arr1
+    y <- initSuperPositionClients host 1 arr2 (fromIntegral (P.length arr1))
+    putStrLn $ "y: " <> show y
+    _ <- mapM (\tenant -> forkOS (run_polling_updates tenant)) arr1
+    _ <-  mapM (\tenant -> forkOS (start_polling_updates tenant)) arr1
     pure ()
 
 main :: IO ()
 main = do
-  putStrLn "Starting Haskell client..."
-  _ <- forkOS connect
+  -- putStrLn "Starting Haskell client..."
+  -- _ <- forkOS connect
  
-  tenant1 <- stringToCString "test"
-  -- tenant2 <- stringToCString "dev"
-  cond <- hashMapToString $ HashMap.fromList [(pack "k1", DA.String (Text.pack ("2000")))]
-  contextValue <- evalCtx "test" cond
-  -- -- let objectify = contextValue
+  -- tenant1 <- stringToCString "test"
+  -- -- tenant2 <- stringToCString "dev"
+  -- cond <- hashMapToString $ HashMap.fromList [(pack "k1", DA.String (Text.pack ("2000")))]
+  -- contextValue <- evalExperiment "test" cond 2
+  -- -- -- let objectify = contextValue
   -- case contextValue of
   --   Left err -> putStrLn $ "Error: " <> err
-  --   Right obj -> putStrLn $ "Object: " <> show obj
-  -- let json' =  String (Text.pack "{sedan: 30, suv: 30, hatchback: 0, autorickshaw: 0, taxi: 0, taxiplus: 0}")
+  --   Right obj -> putStrLn $ "Object here: " <> show obj
   -- let jsonString = case json' of
   --         DA.String str ->
   --           putStrLn $ "str: " <> 
