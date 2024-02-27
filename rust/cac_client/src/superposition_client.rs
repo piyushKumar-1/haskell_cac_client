@@ -17,13 +17,14 @@ pub struct Client {
     pub(crate) experiments: Arc<RwLock<ExperimentStore>>,
     pub(crate) http_client: reqwest::Client,
     last_polled: Arc<RwLock<DateTime<Utc>>>,
+    enable_polling: Arc<RwLock<bool>>,
 }
 
 //TODO: replace all unwraps with proper error handling
 // DO NOT let panics show up in library
 
 impl Client {
-    pub fn new(config: Config) -> Self {
+    pub fn new(config: Config, enable_poll : bool) -> Self {
         Client {
             client_config: Arc::new(config),
             experiments: Arc::new(RwLock::new(HashMap::new())),
@@ -31,6 +32,7 @@ impl Client {
             last_polled: Arc::new(RwLock::new(
                 Utc.with_ymd_and_hms(2023, 01, 01, 0, 0, 0).unwrap(),
             )),
+            enable_polling: Arc::new(RwLock::new(enable_poll)),
         }
     }
 
@@ -43,28 +45,37 @@ impl Client {
             // NOTE: this additional block scopes the write lock
             // at the end of this block, the write lock on exp store is released
             // allowing other threads to read updated data
-            {
-                let experiments = get_experiments(
-                    hostname.clone(),
-                    self.http_client.clone(),
-                    start_date.to_string(),
-                    self.client_config.tenant.to_string(),
-                )
-                .await
-                .unwrap();
-
-                let mut exp_store = self.experiments.write().await;
-                for (exp_id, experiment) in experiments.into_iter() {
-                    match experiment.status {
-                        types::ExperimentStatusType::CONCLUDED => {
-                            exp_store.remove(&exp_id)
+            let lock = self.enable_polling.read().await;
+            let value = *lock;
+            match value{
+                true => {
+                    {
+                        let experiments = get_experiments(
+                            hostname.clone(),
+                            self.http_client.clone(),
+                            start_date.to_string(),
+                            self.client_config.tenant.to_string(),
+                        )
+                        .await
+                        .unwrap();
+        
+                        let mut exp_store = self.experiments.write().await;
+                        for (exp_id, experiment) in experiments.into_iter() {
+                            match experiment.status {
+                                types::ExperimentStatusType::CONCLUDED => {
+                                    exp_store.remove(&exp_id)
+                                }
+                                _ => exp_store.insert(exp_id, experiment),
+                            };
                         }
-                        _ => exp_store.insert(exp_id, experiment),
-                    };
+                    } // write lock on exp store releases here
+                    *start_date = Utc::now();
+                    interval.tick().await;
                 }
-            } // write lock on exp store releases here
-            *start_date = Utc::now();
-            interval.tick().await;
+                false => {
+                    interval.tick().await;
+                }
+            }
         }
     }
 
@@ -173,6 +184,7 @@ impl ClientFactory {
         tenant: String,
         poll_frequency: u64,
         hostname: String,
+        enable_polling: bool,
     ) -> Result<Arc<Client>, String> {
         let mut factory = self.write().await;
 
@@ -184,7 +196,7 @@ impl ClientFactory {
             tenant: tenant.to_string(),
             hostname: hostname,
             poll_frequency: poll_frequency,
-        }));
+        }, enable_polling));
 
         factory.insert(tenant.to_string(), client.clone());
         return Ok(client.clone());

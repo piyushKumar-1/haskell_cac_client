@@ -102,7 +102,7 @@ pub extern "C" fn init_superposition_clients(hostname: *const c_char, polling_fr
     local.block_on(&Runtime::new().unwrap(), async move {
         for tenant in cac_tenants {
                 match sp::CLIENT_FACTORY
-                    .create_client(tenant.to_string(), poll_frequency, hostname.to_string())
+                    .create_client(tenant.to_string(), poll_frequency, hostname.to_string(), true)
                     .await {
                         Ok(x) => {
                             println!("Superposition Client created successfully {:?}", x);
@@ -346,6 +346,7 @@ pub extern "C" fn create_client_from_config(c_tenant: *const c_char, polling_int
                                     tenant.to_string(),
                                     polling_interval.as_secs(),
                                     hostname_str.to_string(),
+                                    false,
                                 )
                                 .await {
                                     Ok(x) => {
@@ -395,6 +396,7 @@ pub struct Client {
     polling_interval: Duration,
     last_modified: Data<RwLock<DateTime<Utc>>>,
     config: Data<RwLock<Config>>,
+    enable_polling: Data<RwLock<bool>>,
 }
 
 fn clone_reqw(reqw: &RequestBuilder) -> Result<RequestBuilder, String> {
@@ -439,6 +441,7 @@ impl Client {
                 last_modified_at.unwrap_or(DateTime::<Utc>::from(UNIX_EPOCH)),
             )),
             config: Data::new(RwLock::new(config)),
+            enable_polling: Data::new(RwLock::new(true)),
         };
         // if update_config_periodically {
         //     client.clone().start_polling_update().await;
@@ -467,6 +470,7 @@ impl Client {
                 DateTime::<Utc>::from(UNIX_EPOCH)
             )),
             config : new_config2,
+            enable_polling: Data::new(RwLock::new(false)),
         }
     }
 
