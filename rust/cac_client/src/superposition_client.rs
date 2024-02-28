@@ -167,7 +167,7 @@ async fn get_experiments(
                 Ok(response) => response.json::<ListExperimentsResponse>()
                     .await
                     .unwrap_or_default(),
-                Err(e) => ListExperimentsResponse::default()
+                Err(_) => ListExperimentsResponse::default()
             };
         let experiments = list_experiments_response.data;
         // println!("got these running experiments: {:?}", running_experiments);
@@ -200,6 +200,25 @@ impl ClientFactory {
         if let Some(client) = factory.get(&tenant) {
             return Ok(client.clone());
         }
+
+        let client = Arc::new(Client::new(Config {
+            tenant: tenant.to_string(),
+            hostname: hostname,
+            poll_frequency: poll_frequency,
+        }, enable_polling));
+
+        factory.insert(tenant.to_string(), client.clone());
+        return Ok(client.clone());
+    }
+
+    pub async fn create_client_with_config(
+        &self,
+        tenant: String,
+        poll_frequency: u64,
+        hostname: String,
+        enable_polling: bool,
+    ) -> Result<Arc<Client>, String> {
+        let mut factory = self.write().await;
 
         let client = Arc::new(Client::new(Config {
             tenant: tenant.to_string(),

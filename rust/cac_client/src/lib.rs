@@ -78,11 +78,11 @@ pub extern "C" fn init_cac_clients(hostname: *const c_char, polling_interval_sec
                 )
                 .await {
                     Ok(x) => {
-                        println!("CAC Client created successfully {:?}", x);
+                        println!("CAC Client created successfully for tenant {:?} and value:  {:?}", tenant, x);
                     },
                     Err(err) => {
                         // update_last_error(err);
-                        println!("Failed to create cac client: {:?}", err);
+                        println!("Failed to create cac client for tenant {:?}: {:?}", tenant, err);
                         return 1;
                     }
                 };
@@ -105,11 +105,11 @@ pub extern "C" fn init_superposition_clients(hostname: *const c_char, polling_fr
                     .create_client(tenant.to_string(), poll_frequency, hostname.to_string(), true)
                     .await {
                         Ok(x) => {
-                            println!("Superposition Client created successfully {:?}", x);
+                            println!("Superposition Client created successfully for tenant {:?} and val: {:?}", tenant, x);
                         },
                         Err(err) => {
                             // update_last_error(err);
-                            println!("Superposition Client Failed to create client: {:?}", err);
+                            println!("Superposition Client Failed to create client for tenant {:?} with err: {:?}", tenant, err);
                             return 1;
                         }
                 }      
@@ -119,27 +119,50 @@ pub extern "C" fn init_superposition_clients(hostname: *const c_char, polling_fr
     })
 }
 
+fn get_sp_client(tenant: String) -> Arc<sp::Client> {
+    let rt = Runtime::new().unwrap();
+    rt.block_on(async {
+        match sp::CLIENT_FACTORY
+        .get_client(tenant.clone())
+        .await
+        .map_err(|e| {
+            log::error!("{}: {}", tenant, e);
+            format!("{}: Failed to get superposition client", tenant)
+            
+        }){
+            Ok(x) => x,
+            Err(e) => {
+                println!("Failed to get superposition client: {:?}", e);
+                println!("Retrying in 5 seconds");
+                tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
+                get_sp_client(tenant)
+            }
+        }
+    })
+}
+
 #[no_mangle]
 pub extern "C" fn run_polling_updates(c_tenant: *const c_char) {
     let rt = Runtime::new().unwrap();
     let tenant = convert_c_str_to_rust_str(c_tenant);
+    let sp_client = get_sp_client(tenant.clone());
     rt.block_on(async {
-        let sp_client = match sp::CLIENT_FACTORY
-            .get_client(tenant.clone())
-            .await
-            .map_err(|e| {
-                log::error!("{}: {}", tenant, e);
-                format!("{}: Failed to get superposition client", tenant)
-            })
-            {
-                Ok(x) => x,
-                Err(e) => {
-                    println!("Failed to get superposition client: {:?}", e);
-                    return;
-                }
-            };
         sp_client.run_polling_updates().await;
     });
+            // let sp_client = match sp::CLIENT_FACTORY
+            // .get_client(tenant.clone())
+            // .await
+            // .map_err(|e| {
+            //     log::error!("{}: {}", tenant, e);
+            //     format!("{}: Failed to get superposition client", tenant)
+            // })
+            // {
+            //     Ok(x) => x,
+            //     Err(e) => {
+            //         println!("Failed to get superposition client: {:?}", e);
+            //         return;
+            //     }
+            // };
 }
 
 #[no_mangle]
@@ -342,7 +365,7 @@ pub extern "C" fn create_client_from_config(c_tenant: *const c_char, polling_int
                         Ok(x) => {
                             println!("CAC Client created successfully ");
                             match sp::CLIENT_FACTORY
-                                .create_client(
+                                .create_client_with_config(
                                     tenant.to_string(),
                                     polling_interval.as_secs(),
                                     hostname_str.to_string(),
@@ -595,9 +618,6 @@ impl ClientFactory {
             }
         };
 
-        if let Some(client) = factory.get(&tenant) {
-            return Ok(client.clone());
-        }
 
         let client = Arc::new(
             Client::new_with_config(
