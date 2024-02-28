@@ -508,9 +508,19 @@ impl Client {
 
     pub async fn start_polling_update(self: Arc<Self>) {
         let mut interval = interval(self.polling_interval);
+        let enable_poll = self.enable_polling.read().unwrap();
+        let enable = *enable_poll;
         loop {
-            interval.tick().await;
-            self.update_cac().await.unwrap_or_else(identity);
+            match enable {
+                true => {
+                    interval.tick().await;
+                    self.update_cac().await.unwrap_or_else(identity);
+                }
+                false => {
+                    let _ = interval.tick().await;
+                }
+            }
+            
         }
     }
 

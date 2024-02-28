@@ -50,14 +50,22 @@ impl Client {
             match value{
                 true => {
                     {
-                        let experiments = get_experiments(
+                        let experiments = match get_experiments(
                             hostname.clone(),
                             self.http_client.clone(),
                             start_date.to_string(),
                             self.client_config.tenant.to_string(),
                         )
                         .await
-                        .unwrap();
+                        {
+                            Ok(experiments) => experiments,
+                            Err(e) => {
+                                println!("Error fetching experiments: {}", e);
+                                let mut lock = self.enable_polling.write().await;
+                                *lock = false;
+                                HashMap::new()
+                            }
+                        };
         
                         let mut exp_store = self.experiments.write().await;
                         for (exp_id, experiment) in experiments.into_iter() {
