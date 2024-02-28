@@ -158,16 +158,17 @@ async fn get_experiments(
         let endpoint = format!(
             "{hostname}/experiments?from_date={start_date}&to_date={now}&page={page}&count={requesting_count}"
         );
-        let list_experiments_response = http_client
+        let list_experiments_response = match http_client
             .get(format!("{endpoint}&status=CREATED,INPROGRESS,CONCLUDED"))
             .header("x-tenant", tenant.to_string())
             .send()
             .await
-            .unwrap()
-            .json::<ListExperimentsResponse>()
-            .await
-            .unwrap_or_default();
-
+            {
+                Ok(response) => response.json::<ListExperimentsResponse>()
+                    .await
+                    .unwrap_or_default(),
+                Err(e) => ListExperimentsResponse::default()
+            };
         let experiments = list_experiments_response.data;
         // println!("got these running experiments: {:?}", running_experiments);
 
