@@ -34,7 +34,7 @@ anyhow = { version = "1.0", default-features = false }
 [lib]
 name = "cac_client"
 path = "src/lib.rs"
-crate-type = ["staticlib", "cdylib"]
+crate-type = ["cdylib", "lib"]
 
 [package]
 name = "cac_client"

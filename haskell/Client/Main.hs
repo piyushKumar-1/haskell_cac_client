@@ -1,14 +1,9 @@
 {-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE DerivingStrategies #-}
-{-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE ForeignFunctionInterface #-}
-{-# LANGUAGE StandaloneDeriving #-}
-{-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
-{-# LANGUAGE StandaloneDeriving #-}
-{-# LANGUAGE TemplateHaskell #-}
 {-# OPTIONS_GHC -Wno-orphans #-}
 {-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
 {-# OPTIONS_GHC -Wwarn=identities #-}
@@ -26,7 +21,6 @@ import Data.Maybe
 import Data.Text as Text
 import qualified Data.Text.Lazy as LT
 import qualified Data.Text.Lazy.Encoding as LTE
-import Data.Text.Encoding
 import Foreign
 import Foreign.C
 import Foreign.ForeignPtr.Unsafe (unsafeForeignPtrToPtr)
@@ -108,7 +102,7 @@ freeJsonData ptr = do
   newForeignPtr free_json_data ptr
 
 stringToCString :: String -> IO CString
-stringToCString str = newCString str
+stringToCString = newCString
 
 printForeignPtr :: ForeignPtr CULong -> IO ()
 printForeignPtr fptr = do
@@ -116,7 +110,7 @@ printForeignPtr fptr = do
   culongValue <- peek ptr
   putStrLn $ "CULong value: " ++ show culongValue
 
-hashMapToString :: MyHashMap -> IO (String)
+hashMapToString :: MyHashMap -> IO String
 hashMapToString hashMap = pure $ Text.unpack . LT.toStrict . LTE.decodeUtf8 . encode $ hashMap
 
 -- stringToCString (unpack json)
@@ -124,18 +118,18 @@ hashMapToString hashMap = pure $ Text.unpack . LT.toStrict . LTE.decodeUtf8 . en
 type MyHashMap = HashMap Text DA.Value
 
 defaultHashMap :: MyHashMap
-defaultHashMap = HashMap.fromList [(pack "defualt", (DA.String (Text.pack "default")))]
+defaultHashMap = HashMap.fromList [(pack "defualt", DA.String (Text.pack "default"))]
 
 cStringToText :: CString -> IO Text
 cStringToText cStr = pack <$> peekCString cStr
 
 -- Parse Text to HashMap
 parseJsonToHashMap :: Text -> Maybe MyHashMap
-parseJsonToHashMap txt = DA.decode . BS.fromStrict . encodeUtf8 $ txt
+parseJsonToHashMap = DA.decode . BS.fromStrict . encodeUtf8
 
 initCACClient :: String -> Int -> [String] -> IO Int
 initCACClient host interval tenants = do
-  tenantsCount <- return $ P.length tenants
+  let tenantsCount = P.length tenants
   arr1 <- mapM stringToCString tenants
   arr2 <- newArray arr1
   host' <- stringToCString host
@@ -144,7 +138,7 @@ initCACClient host interval tenants = do
 
 initSuperPositionClient :: String -> Int -> [String] -> IO Int
 initSuperPositionClient host interval tenants = do
-  tenantsCount <- return $ P.length tenants
+  let tenantsCount = P.length tenants
   arr1 <- mapM stringToCString tenants
   arr2 <- newArray arr1
   host' <- stringToCString host
@@ -154,12 +148,12 @@ initSuperPositionClient host interval tenants = do
 runSuperPositionPolling :: [String] -> IO ()
 runSuperPositionPolling  tenants = do
   arr1 <- mapM stringToCString tenants
-  Control.Monad.void $ mapM (\tenant -> forkOS (run_polling_updates tenant)) arr1
+  mapM_ (forkOS . run_polling_updates) arr1
 
 startCACPolling :: [String] -> IO ()
 startCACPolling tenants = do
   arr1 <- mapM stringToCString tenants
-  Control.Monad.void $ mapM (\tenant -> forkOS (start_polling_updates tenant)) arr1
+  mapM_ ( forkOS . start_polling_updates) arr1
 
 initializeClients :: (String, Int, [String]) -> (String, Int, [String]) -> IO Int
 initializeClients (host1,interval1,tenants1) (host2,interval2,tenants2) = do
@@ -169,13 +163,13 @@ initializeClients (host1,interval1,tenants1) (host2,interval2,tenants2) = do
 createClientFromConfig :: String -> Int -> String -> String -> IO Int
 createClientFromConfig tenant interval  config hostname = do
   host' <- stringToCString hostname
-  interval' <- return $ fromIntegral interval
+  let interval' = fromIntegral interval
   tenant' <- stringToCString tenant
   config' <- stringToCString config
   status <- create_client_from_config tenant' interval'  config' host'
   return $ fromIntegral status
 
-evalExperimentAsString :: String -> String -> Int -> IO (String)
+evalExperimentAsString :: String -> String -> Int -> IO String
 evalExperimentAsString tenant context toss = do
   tenant' <- stringToCString tenant
   context' <- stringToCString context
@@ -236,23 +230,37 @@ connect = do
     putStrLn $ "x: " <> show x
     y <- initSuperPositionClients host 1 arr2 (fromIntegral (P.length arr1))
     putStrLn $ "y: " <> show y
-    _ <- mapM (\tenant -> forkOS (run_polling_updates tenant)) arr1
-    _ <-  mapM (\tenant -> forkOS (start_polling_updates tenant)) arr1
+    case x of 
+      0 -> mapM_  (forkOS . run_polling_updates) arr1
+      _ -> putStrLn "Error in initializing CAC clients"
+    case y of 
+      0 -> mapM_ (forkOS . start_polling_updates) arr1
+      _ -> putStrLn "Error in initializing SuperPosition clients"
+    
     pure ()
 
 main :: IO ()
 main = do
   -- putStrLn "Starting Haskell client..."
   -- _ <- forkOS connect
- 
-  -- tenant1 <- stringToCString "test"
-  -- -- tenant2 <- stringToCString "dev"
-  -- cond <- hashMapToString $ HashMap.fromList [(pack "k1", DA.String (Text.pack ("2000")))]
-  -- contextValue <- evalExperiment "test" cond 2
-  -- -- -- let objectify = contextValue
+  -- _ <- connect
+  cond <- hashMapToString $ HashMap.fromList [(pack "k1", DA.String (Text.pack "2000"))]
+  putStrLn $ "cond: " <> cond
+  -- contextValue <- evalExperiment "dev" cond 2
+  -- putStrLn $ "contextValue: " <> show contextValue
+  -- let objectify = contextValue
   -- case contextValue of
   --   Left err -> putStrLn $ "Error: " <> err
   --   Right obj -> putStrLn $ "Object here: " <> show obj
+  -- _ <- run_polling_updates tenant1
+  -- let x = "{\"contexts\": [],\"overrides\": {},\"default_configs\": {\n        \"merchantServiceUsageConfig:aadhaarVerificationService\": \"Gridline\",\n        \"merchantServiceUsageConfig:autoComplete\": \"Google\",\n        \"merchantServiceUsageConfig:createdAt\": \"2024-02-19 15:13:50.263530+00:00\",\n        \"merchantServiceUsageConfig:enableDashboardSms\": false,\n        \"merchantServiceUsageConfig:getDistances\": \"Google\",\n        \"merchantServiceUsageConfig:getDistancesForCancelRide\": \"OSRM\",\n        \"merchantServiceUsageConfig:getExophone\": \"Exotel\",\n        \"merchantServiceUsageConfig:getPickupRoutes\": \"Google\",\n        \"merchantServiceUsageConfig:getPlaceDetails\": \"Google\",\n        \"merchantServiceUsageConfig:getPlaceName\": \"Google\",\n        \"merchantServiceUsageConfig:getRoutes\": \"Google\",\n        \"merchantServiceUsageConfig:getTripRoutes\": \"Google\",\n        \"merchantServiceUsageConfig:initiateCall\": \"Exotel\",\n        \"merchantServiceUsageConfig:issueTicketService\": \"Kapture\",\n        \"merchantServiceUsageConfig:merchantId\": \"da4e23a5-3ce6-4c37-8b9b-41377c3c1a52\",\n        \"merchantServiceUsageConfig:merchantOperatingCityId\": \"6bc154f2-2097-fbb3-7aa0-969ced5962d5\",\n        \"merchantServiceUsageConfig:notifyPerson\": \"FCM\",\n        \"merchantServiceUsageConfig:smsProvidersPriorityList\": [\n            \"MyValueFirst\",\n            \"ExotelSms\",\n            \"GupShup\"\n        ],\n        \"merchantServiceUsageConfig:snapToRoad\": \"Google\",\n        \"merchantServiceUsageConfig:updatedAt\": \"2024-02-19 15:13:50.263530+00:00\",\n        \"merchantServiceUsageConfig:useFraudDetection\": false,\n        \"merchantServiceUsageConfig:whatsappProvidersPriorityList\": [\n            \"GupShu\"\n        ]\n    }\n}"
+  -- _ <- createClientFromConfig "test" 10 x "http://localhost:8080"
+  -- tenant1 <- stringToCString "dev"
+  -- contextValue1 <- evalExperimentAsString "dev" cond 2
+  -- let objectify = contextValue
+  -- putStrLn $ "contextValue1: " <> show contextValue1
+  -- tenant2 <- stringToCString "dev"
+  
   -- let jsonString = case json' of
   --         DA.String str ->
   --           putStrLn $ "str: " <> 

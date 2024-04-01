@@ -1,22 +1,18 @@
-# Nix for Rust project management
-{ inputs, ... }: {
+{ inputs, ... }:
+{
   perSystem = { config, self', pkgs, lib, system, ... }:
     let
-      rustToolchain = (pkgs.rust-bin.fromRustupToolchainFile ./rust-toolchain.toml).override {
-        extensions = [
-          "rust-src"
-          "rust-analyzer"
-          "clippy"
-        ];
-      };
-      craneLib = (inputs.common.inputs.crane.mkLib pkgs).overrideToolchain rustToolchain;
-      args = {
+      rustToolchain = pkgs.rust-bin.fromRustupToolchainFile ./rust-toolchain.toml;
+      craneLib = (inputs.crane.mkLib pkgs).overrideToolchain rustToolchain;
+      craneArgs = {
         pname = "cac_client";
+        version = "0.0.1";
         src = ./.;
         buildInputs = lib.optionals pkgs.stdenv.isDarwin
           (with pkgs.darwin.apple_sdk.frameworks; [
             Security
             SystemConfiguration
+            pkgs.fixDarwinDylibNames
           ]) ++ [
           pkgs.libiconv
           pkgs.openssl
@@ -25,13 +21,17 @@
           pkgs.pkg-config
         ];
       };
-      cargoArtifacts = craneLib.buildDepsOnly args;
-      package = craneLib.buildPackage (args // {
+
+      cargoArtifacts = craneLib.buildDepsOnly craneArgs;
+      package = craneLib.buildPackage (craneArgs // {
         inherit cargoArtifacts;
-        doCheck = false; # FIXME: tests require services to be running
+        # https://discourse.nixos.org/t/how-to-use-install-name-tool-on-darwin/9931/2
+        postInstall = ''
+          ${if pkgs.stdenv.isDarwin then "fixDarwinDylibNames" else ""}
+        '';
       });
 
-      check = craneLib.cargoClippy (args // {
+      check = craneLib.cargoClippy (craneArgs // {
         inherit cargoArtifacts;
         cargoClippyExtraArgs = "--all-targets --all-features -- --deny warnings";
       });
@@ -54,7 +54,7 @@
           # Add your dev tools here.
           rustToolchain
           cargo-watch
-        ];
+        ] ++ craneArgs.nativeBuildInputs;
       };
     };
 }
