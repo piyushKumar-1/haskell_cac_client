@@ -87,7 +87,13 @@ pub extern "C" fn init_cac_clients(hostname: *const c_char, polling_interval_sec
                     }
                 };
         }
-        tx.send("CLIENTS_CREATED").unwrap();
+        match tx.send("CLIENTS_CREATED") {
+            Ok(_) => (),
+            Err(e) => {
+                println!("Failed to send message to channel: {:?}", e);
+                return 1;
+            }
+        };
         return 0;
     })
 }
@@ -114,7 +120,13 @@ pub extern "C" fn init_superposition_clients(hostname: *const c_char, polling_fr
                         }
                 }      
         }
-        tx.send("CLIENTS_CREATED").unwrap();
+        match tx.send("CLIENTS_CREATED") {
+            Ok(_) => (),
+            Err(e) => {
+                println!("Failed to send message to channel: {:?}", e);
+                return 1;
+            }
+        };
         return 0;
     })
 }
@@ -209,11 +221,24 @@ pub extern "C" fn eval_ctx(c_tenant: *const c_char, ctx_json: *const c_char) -> 
         Ok(x) => x,
         Err(e) => {
             println!("Failed to get cac client: {:?}", e);
-            return CString::new("Failed to get cac client").expect("Failed to create CString").into_raw();
+            return CString::new("Failed to get cac client").expect("Did not get a proper client").into_raw();
         }
     };
-    let ctx_str = unsafe { CStr::from_ptr(ctx_json).to_str().unwrap() };
-    let ctx_obj: Map<String, Value> = serde_json::from_str(ctx_str).unwrap();
+    let ctx_str = unsafe { 
+        match CStr::from_ptr(ctx_json).to_str() {
+            Ok(x) => x,
+            Err(e) => {
+                println!("Failed to convert the context to a string: {:?}", e);
+                return CString::new("Failed to convert the context to a string").expect("Failed to create CString").into_raw();
+            }
+        } };
+    let ctx_obj: Map<String, Value> = match serde_json::from_str(ctx_str) {
+        Ok(x) => x,
+        Err(e) => {
+            println!("Failed to parse the context: {:?}", e);
+            return CString::new("Failed to parse the context").expect("Failed to create CString").into_raw();
+        }
+    };
     let overrides = match cac_client.eval(ctx_obj) {
         Ok(x) => x,
         Err(e) => {
@@ -478,7 +503,18 @@ impl Client {
         config: Value,
         hostname: String
     ) -> Self { 
-        let new_config1 = serde_json::from_value(config).unwrap();
+        let new_config1 = match serde_json::from_value(config)
+        {
+            Ok(x) => x,
+            Err(e) => {
+                log::error!("Failed to parse the config: {:?}", e);
+                Config {
+                    contexts: vec![],
+                    overrides: Map::new(),
+                    default_configs: Map::new(),
+                }
+            }
+        };
         let new_config2 = Data::new(RwLock::new(new_config1));
         let reqw_client = reqwest::Client::builder().build().expect("Failed to build reqwest client");
         let cac_endpoint = format!("{hostname}/config");
@@ -531,7 +567,14 @@ impl Client {
 
     pub async fn start_polling_update(self: Arc<Self>) {
         let mut interval = interval(self.polling_interval);
-        let enable_poll = self.enable_polling.read().unwrap();
+        let enable_poll = match self.enable_polling.read()
+        {
+            Ok(x) => x,
+            Err(e) => {
+                log::error!("Failed to acquire read lock: {:?}", e);
+                return;
+            }
+        };
         let enable = *enable_poll;
         loop {
             match enable {
