@@ -13,6 +13,7 @@ module Client.Main where
 import Control.Concurrent
 import Data.Aeson as DA
 import Data.Aeson.Key as DAK
+import qualified Data.Aeson.KeyMap as DAKM
 import Data.Aeson.KeyMap as KM
 
 import qualified Data.ByteString.Lazy.Char8 as BS
@@ -32,6 +33,10 @@ import System.Environment as Se
 import GHC.Generics
 import qualified Data.ByteString.Lazy.Char8 as  DB
 import Data.Text.Encoding as DT
+import Control.Lens.Combinators
+import Control.Lens.Fold
+import Data.Aeson.Lens
+import qualified Data.Vector as DV
 
 foreign import ccall "init_cac_clients" init_cac_clients :: CString -> CULong -> Ptr CString -> CInt -> IO  CInt
 
@@ -77,6 +82,15 @@ getVariants tenant context toss = do
   result <- withForeignPtr resPtr' cStringToText
   return $ toJSON result
 
+getVariants' :: String -> [(Text,Value)] -> Int -> IO Value
+getVariants' tenant context toss = do
+  tenant' <- stringToCString tenant
+  context' <- hashMapToString (HashMap.fromList context) >>= stringToCString
+  resPtr <- get_variants tenant' context' $ fromIntegral toss
+  resPtr' <- freeJsonData resPtr
+  result <- withForeignPtr resPtr' cStringToText
+  return $ toJSON result
+
 evalCtx :: String -> String -> IO (Either String Object)
 evalCtx tenant context = do
   putStrLn $ "evalCtx called with tenant: " <> tenant <> " and context: " <> context
@@ -88,14 +102,23 @@ evalCtx tenant context = do
   result <- withForeignPtr resPtr' cStringToText
   return $ convertTextToObject result
 
-evalExperiment :: String -> String -> Int -> IO (Either String Object)
+-- evalExperiment :: String -> String -> Int -> IO (Either String Object)
+-- evalExperiment tenant context toss = do
+--   tenant' <- stringToCString tenant
+--   context' <- stringToCString context
+--   resPtr <- eval_experiment tenant' context' $ fromIntegral toss
+--   resPtr' <- freeJsonData resPtr
+--   result <- withForeignPtr resPtr' cStringToText
+--   return $ convertTextToObject (makeNull result)
+
+evalExperiment :: String -> [(Text,Value)] -> Int -> IO String
 evalExperiment tenant context toss = do
   tenant' <- stringToCString tenant
-  context' <- stringToCString context
+  context' <- hashMapToString (HashMap.fromList context) >>= stringToCString
   resPtr <- eval_experiment tenant' context' $ fromIntegral toss
   resPtr' <- freeJsonData resPtr
   result <- withForeignPtr resPtr' cStringToText
-  return $ convertTextToObject (makeNull result)
+  return $ Text.unpack $ makeNull result
 
 freeJsonData :: Ptr CChar -> IO (ForeignPtr CChar)
 freeJsonData ptr = do
@@ -187,6 +210,26 @@ evalExperimentAsValue tenant context toss = do
   result <- withForeignPtr resPtr' cStringToText
   return $ toJSON result
 
+dropPrefix :: Text.Text -> Key -> Key
+dropPrefix key' config = maybe config DAK.fromText $ Text.stripPrefix key' (DAK.toText config)
+
+getConfigFromCAC :: (FromJSON a, ToJSON a) => [(Text, Value)] -> String -> Int ->  String -> IO (Maybe a)
+getConfigFromCAC context tenant toss keyToDrop = do
+  config <- evalExperiment tenant context toss
+  let res' = config ^@.. _Object . reindexed (dropPrefix (pack keyToDrop)) (itraversed . indices (Text.isPrefixOf (pack keyToDrop) . DAK.toText))  
+  pure $ DA.Object (KM.fromList res') ^? _JSON
+
+getConfigListFromCAC :: (FromJSON a, ToJSON a) => [(Text, Value)] -> String -> Int ->  String -> String -> IO (Maybe [a])
+getConfigListFromCAC context tenant toss keyToDrop key' = do
+  config <- evalExperiment tenant context toss
+  let res' = config ^@.. _Object . reindexed (dropPrefix (pack keyToDrop)) (itraversed . indices (Text.isPrefixOf (pack keyToDrop) . DAK.toText))  
+      res'' =
+        fromMaybe
+          (DA.Array (DV.fromList []))
+          (DAKM.lookup (DAK.fromText (Text.pack key')) (DAKM.fromList res'))
+  pure $ res'' ^? _JSON
+  
+
 makeNull :: Text -> Text 
 makeNull txt = 
   let replaced = Text.replace (Text.pack "\"None\"") (Text.pack "null") txt
@@ -222,10 +265,10 @@ newtype Kilometers = Kilometers
 
 connect :: IO()
 connect = do
-    arr1 <- mapM stringToCString ["test", "dev"]
+    arr1 <- mapM stringToCString ["atlas_driver_offer_bpp_v2", "ltsdefault"]
     arr2 <- newArray arr1
     hostEnv <- Se.lookupEnv "HOST"
-    host <- stringToCString $ fromMaybe "http://localhost:8080" hostEnv
+    host <- stringToCString "https://api.sandbox.beckn.juspay.in/cac"
     x <- initCacClients host 10 arr2 (fromIntegral (P.length arr1))
     putStrLn $ "x: " <> show x
     y <- initSuperPositionClients host 1 arr2 (fromIntegral (P.length arr1))
@@ -239,19 +282,50 @@ connect = do
     
     pure ()
 
+
 main :: IO ()
 main = do
   -- putStrLn "Starting Haskell client..."
   -- _ <- forkOS connect
-  -- _ <- connect
-  cond <- hashMapToString $ HashMap.fromList [(pack "k1", DA.String (Text.pack "2000"))]
-  putStrLn $ "cond: " <> cond
+  _ <- connect
+  dpcCond <- hashMapToString $ HashMap.fromList []
+  contextValue <- evalExperimentAsString "atlas_driver_offer_bpp_v2" dpcCond 1
+  let res' = contextValue ^@.. _Object . reindexed (dropPrefix (pack "driverPoolConfig:")) (itraversed . indices (Text.isPrefixOf (pack "driverPoolConfig:") . DAK.toText))
+  print res'
+  -- cond <- hashMapToString $ HashMap.fromList [(pack "farePolicyId", DA.String (Text.pack "094112f5-4523-bb76-7697-d6cfd4905361"))]
+  -- status <- createClientFromConfig "atlas_driver_offer_bpp_v2" 10  "{}" "https://api.sandbox.beckn.juspay.in/cac"
+  -- case status of
+  --   0 -> putStrLn "Client created successfully"
+  --   _ -> putStr Ln "Error in creating client"
+  -- let cond = "{}" :: String
+  -- res <- evalExperiment "atlas_driver_offer_bpp_v2" cond 1
   -- contextValue <- evalExperiment "dev" cond 2
   -- putStrLn $ "contextValue: " <> show contextValue
   -- let objectify = contextValue
-  -- case contextValue of
+  -- case res of
   --   Left err -> putStrLn $ "Error: " <> err
-  --   Right obj -> putStrLn $ "Object here: " <> show obj
+  --   Right val -> do
+  --     let ans = KM.filterWithKey (\key _ -> Text.pack "farePolicyProgressiveDetails:" `isPrefixOf` toText key) val
+  --     let waitingCharge' = KM.lookup (DAK.fromString "farePolicyProgressiveDetails:waitingCharge") ans >>= fromJSONHelper
+  --         freeWaitingTime' = KM.lookup (DAK.fromString "farePolicyProgressiveDetails:freeWatingTime") ans >>= fromJSONHelper
+  --         waitingChargeInfo = WaitingChargeInfo <$> freeWaitingTime' <*> waitingCharge'
+  --         waitingCharge''' = KM.lookup (DAK.fromString "farePolicyProgressiveDetails:waitingCharge") ans
+  --     -- print waitingChargeInfo
+  --     case waitingCharge''' of
+  --       Just waitingCharge'' -> do
+  --         case fromJSON waitingCharge'' :: Result WaitingCharge of
+  --           Success a -> print a
+  --           DA.Error err -> putStrLn $  "Error in parsing waiting charge" <> err
+  --     print waitingCharge'
+  --     print freeWaitingTime'
+  --     print ans
+  -- case res of
+    -- Left err -> putStrLn $ "Error: " <> err
+    -- Right val -> do
+    -- Right (Object k) -> do
+      -- let ans = KM.filterWithKey (\key _ -> Text.pack "driverPoolConfig:" `isPrefixOf` toText key) val
+      -- putStrLn $ "shorted shit" <> show ans
+    -- Right  something -> putStrLn $ "not object" <> show something
   -- _ <- run_polling_updates tenant1
   -- let x = "{\"contexts\": [],\"overrides\": {},\"default_configs\": {\n        \"merchantServiceUsageConfig:aadhaarVerificationService\": \"Gridline\",\n        \"merchantServiceUsageConfig:autoComplete\": \"Google\",\n        \"merchantServiceUsageConfig:createdAt\": \"2024-02-19 15:13:50.263530+00:00\",\n        \"merchantServiceUsageConfig:enableDashboardSms\": false,\n        \"merchantServiceUsageConfig:getDistances\": \"Google\",\n        \"merchantServiceUsageConfig:getDistancesForCancelRide\": \"OSRM\",\n        \"merchantServiceUsageConfig:getExophone\": \"Exotel\",\n        \"merchantServiceUsageConfig:getPickupRoutes\": \"Google\",\n        \"merchantServiceUsageConfig:getPlaceDetails\": \"Google\",\n        \"merchantServiceUsageConfig:getPlaceName\": \"Google\",\n        \"merchantServiceUsageConfig:getRoutes\": \"Google\",\n        \"merchantServiceUsageConfig:getTripRoutes\": \"Google\",\n        \"merchantServiceUsageConfig:initiateCall\": \"Exotel\",\n        \"merchantServiceUsageConfig:issueTicketService\": \"Kapture\",\n        \"merchantServiceUsageConfig:merchantId\": \"da4e23a5-3ce6-4c37-8b9b-41377c3c1a52\",\n        \"merchantServiceUsageConfig:merchantOperatingCityId\": \"6bc154f2-2097-fbb3-7aa0-969ced5962d5\",\n        \"merchantServiceUsageConfig:notifyPerson\": \"FCM\",\n        \"merchantServiceUsageConfig:smsProvidersPriorityList\": [\n            \"MyValueFirst\",\n            \"ExotelSms\",\n            \"GupShup\"\n        ],\n        \"merchantServiceUsageConfig:snapToRoad\": \"Google\",\n        \"merchantServiceUsageConfig:updatedAt\": \"2024-02-19 15:13:50.263530+00:00\",\n        \"merchantServiceUsageConfig:useFraudDetection\": false,\n        \"merchantServiceUsageConfig:whatsappProvidersPriorityList\": [\n            \"GupShu\"\n        ]\n    }\n}"
   -- _ <- createClientFromConfig "test" 10 x "http://localhost:8080"

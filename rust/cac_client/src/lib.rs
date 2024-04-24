@@ -78,11 +78,11 @@ pub extern "C" fn init_cac_clients(hostname: *const c_char, polling_interval_sec
                 )
                 .await {
                     Ok(x) => {
-                        println!("CAC Client created successfully for tenant {:?} and value:  {:?}", tenant, x);
+                        log::debug!("CAC Client created successfully for tenant {:?} and value:  {:?}", tenant, x);
                     },
                     Err(err) => {
                         // update_last_error(err);
-                        println!("Failed to create cac client for tenant {:?}: {:?}", tenant, err);
+                        log::error!("Failed to create cac client for tenant {:?}: {:?}", tenant, err);
                         return 1;
                     }
                 };
@@ -90,7 +90,7 @@ pub extern "C" fn init_cac_clients(hostname: *const c_char, polling_interval_sec
         match tx.send("CLIENTS_CREATED") {
             Ok(_) => (),
             Err(e) => {
-                println!("Failed to send message to channel: {:?}", e);
+                log::error!("Failed to send message to channel: {:?}", e);
                 return 1;
             }
         };
@@ -111,11 +111,11 @@ pub extern "C" fn init_superposition_clients(hostname: *const c_char, polling_fr
                     .create_client(tenant.to_string(), poll_frequency, hostname.to_string(), true)
                     .await {
                         Ok(x) => {
-                            println!("Superposition Client created successfully for tenant {:?} and val: {:?}", tenant, x);
+                            log::debug!("Superposition Client created successfully for tenant {:?} and val: {:?}", tenant, x);
                         },
                         Err(err) => {
                             // update_last_error(err);
-                            println!("Superposition Client Failed to create client for tenant {:?} with err: {:?}", tenant, err);
+                            log::error!("Superposition Client Failed to create client for tenant {:?} with err: {:?}", tenant, err);
                             return 1;
                         }
                 }      
@@ -123,7 +123,7 @@ pub extern "C" fn init_superposition_clients(hostname: *const c_char, polling_fr
         match tx.send("CLIENTS_CREATED") {
             Ok(_) => (),
             Err(e) => {
-                println!("Failed to send message to channel: {:?}", e);
+                log::error!("Failed to send message to channel: {:?}", e);
                 return 1;
             }
         };
@@ -144,8 +144,8 @@ fn get_sp_client(tenant: String) -> Arc<sp::Client> {
         }){
             Ok(x) => x,
             Err(e) => {
-                println!("Failed to get superposition client: {:?}", e);
-                println!("Retrying in 5 seconds");
+                log::error!("Failed to get superposition client: {:?}", e);
+                log::error!("Retrying in 5 seconds");
                 tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
                 get_sp_client(tenant)
             }
@@ -192,7 +192,7 @@ pub extern "C" fn start_polling_updates(c_tenant: *const c_char) {
             {
                 Ok(x) => x,
                 Err(e) => {
-                    println!("Failed to get cac client: {:?}", e);
+                    log::error!("Failed to get cac client: {:?}", e);
                     return;
                 }
             };
@@ -220,7 +220,7 @@ pub extern "C" fn eval_ctx(c_tenant: *const c_char, ctx_json: *const c_char) -> 
     {
         Ok(x) => x,
         Err(e) => {
-            println!("Failed to get cac client: {:?}", e);
+            log::error!("Failed to get cac client: {:?}", e);
             return CString::new("Failed to get cac client").expect("Did not get a proper client").into_raw();
         }
     };
@@ -228,21 +228,21 @@ pub extern "C" fn eval_ctx(c_tenant: *const c_char, ctx_json: *const c_char) -> 
         match CStr::from_ptr(ctx_json).to_str() {
             Ok(x) => x,
             Err(e) => {
-                println!("Failed to convert the context to a string: {:?}", e);
+                log::error!("Failed to convert the context to a string: {:?}", e);
                 return CString::new("Failed to convert the context to a string").expect("Failed to create CString").into_raw();
             }
         } };
     let ctx_obj: Map<String, Value> = match serde_json::from_str(ctx_str) {
         Ok(x) => x,
         Err(e) => {
-            println!("Failed to parse the context: {:?}", e);
+            log::error!("Failed to parse the context: {:?}", e);
             return CString::new("Failed to parse the context").expect("Failed to create CString").into_raw();
         }
     };
     let overrides = match cac_client.eval(ctx_obj) {
         Ok(x) => x,
         Err(e) => {
-            println!("Failed to evaluate the context: {:?}", e);
+            log::error!("Failed to evaluate the context: {:?}", e);
             return CString::new("Failed to evaluate the context").expect("Failed to create CString").into_raw();
         }
     };
@@ -286,7 +286,7 @@ pub extern "C" fn get_variants(c_tenant: *const c_char, context: *const c_char, 
         {
             Ok(x) => x,
             Err(e) => {
-                println!("Failed to get superposition client: {:?}", e);
+                log::error!("Failed to get superposition client: {:?}", e);
                 return CString::new("Failed to get superposition client").expect("Failed to create CString").into_raw();
             }
         };
@@ -310,7 +310,7 @@ pub extern "C" fn is_experiments_running(c_tenant: *const c_char) -> c_int {
         {
             Ok(x) => x,
             Err(e) => {
-                println!("Failed to get superposition client: {:?}", e);
+                log::error!("Failed to get superposition client: {:?}", e);
                 return 2;
             }
         };
@@ -344,7 +344,7 @@ pub extern "C" fn eval_experiment(c_tenant: *const c_char, context: *const c_cha
             {
                 Ok(x) => x,
                 Err(e) => {
-                    println!("Failed to get cac client: {:?}", e);
+                    log::error!("Failed to get cac client: {:?}", e);
                     return CString::new("Failed to get cac client").expect("Failed to create CString").into_raw();
                 }
             };
@@ -356,7 +356,7 @@ pub extern "C" fn eval_experiment(c_tenant: *const c_char, context: *const c_cha
             return c_string.into_raw();
         },
         Err(e) => {
-            println!("Failed to get superposition client: {:?}", e);
+            log::error!("Failed to get superposition client: {:?}", e);
             return CString::new("Failed to get superposition client").expect("Failed to create CString").into_raw();
         }
     }
@@ -388,7 +388,7 @@ pub extern "C" fn create_client_from_config(c_tenant: *const c_char, polling_int
                         hostname_str.to_string()
                     ) {
                         Ok(x) => {
-                            println!("CAC Client created successfully ");
+                            log::debug!("CAC Client created successfully ");
                             match sp::CLIENT_FACTORY
                                 .create_client_with_config(
                                     tenant.to_string(),
@@ -398,18 +398,18 @@ pub extern "C" fn create_client_from_config(c_tenant: *const c_char, polling_int
                                 )
                                 .await {
                                     Ok(x) => {
-                                        println!("Superposition Client created successfully ");
+                                        log::debug!("Superposition Client created successfully ");
                                     },
                                     Err(err) => {
                                         // update_last_error(err);
-                                        println!("Failed to create superposition client: {:?}", err);
+                                        log::error!("Failed to create superposition client: {:?}", err);
                                         return 1;
                                     }
                                 };
                         },
                         Err(err) => {
                             // update_last_error(err);
-                            println!("Failed to create cac client: {:?}", err);
+                            log::error!("Failed to create cac client: {:?}", err);
                             return 1;
                         }
                     };
@@ -417,7 +417,7 @@ pub extern "C" fn create_client_from_config(c_tenant: *const c_char, polling_int
             })
         },
         Err(e) => {
-            println!("Failed to parse the config: {} {:?} str", e, config);
+            log::error!("Failed to parse the config: {} {:?} str", e, config);
             return 1;
         }
     }
@@ -507,6 +507,7 @@ impl Client {
         {
             Ok(x) => x,
             Err(e) => {
+                log::error!("Failed to parse the config: {:?}", e);
                 log::error!("Failed to parse the config: {:?}", e);
                 Config {
                     contexts: vec![],

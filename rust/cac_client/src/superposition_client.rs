@@ -60,7 +60,7 @@ impl Client {
                         {
                             Ok(experiments) => experiments,
                             Err(e) => {
-                                println!("Error fetching experiments: {}", e);
+                                log::error!("Error fetching experiments: {}", e);
                                 let mut lock = self.enable_polling.write().await;
                                 *lock = false;
                                 HashMap::new()

@@ -19,6 +19,10 @@ library
         , aeson
         , unordered-containers
         , bytestring
+        , generic-lens
+        , lens
+        , lens-aeson
+        , vector
     
     extra-libraries: cac_client 
     -- Directories containing source files.
@@ -34,6 +38,10 @@ executable haskell-cac
         , aeson
         , unordered-containers
         , bytestring
+        , generic-lens
+        , lens
+        , lens-aeson
+        , vector
     ghc-options: -threaded -rtsopts
     
     extra-libraries: cac_client 
