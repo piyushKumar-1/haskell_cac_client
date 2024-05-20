@@ -37,14 +37,17 @@ import Control.Lens.Combinators
 import Control.Lens.Fold
 import Data.Aeson.Lens
 import qualified Data.Vector as DV
+import Data.Time.Clock
+import Control.Concurrent.Async (mapConcurrently)
+import Control.Concurrent
 
-foreign import ccall "init_cac_clients" init_cac_clients :: CString -> CULong -> Ptr CString -> CInt -> IO  CInt
+foreign import ccall "init_cac_clients" init_cac_clients :: CString -> CULong -> Ptr CString -> CInt -> CBool -> IO  CInt
 
 foreign import ccall "eval_ctx" eval_ctx :: CString -> CString -> IO (Ptr CChar)
 
 foreign import ccall "&free_json_data" free_json_data :: FunPtr (Ptr CChar -> IO ())
 
-foreign import ccall "init_superposition_clients" init_superposition_clients :: CString -> CULong -> Ptr CString -> CInt -> IO CInt
+foreign import ccall "init_superposition_clients" init_superposition_clients :: CString -> CULong -> Ptr CString -> CInt -> CBool -> IO CInt
 
 foreign import ccall "eval_experiment" eval_experiment :: CString -> CString -> CInt -> IO (Ptr CChar)
 
@@ -58,13 +61,13 @@ foreign import ccall "is_experiments_running" is_experiments_running :: CString 
 
 foreign import ccall "create_client_from_config" create_client_from_config :: CString -> CULong -> CString -> CString -> IO CInt
 
-initCacClients :: CString -> CULong -> Ptr CString -> CInt -> IO  CInt
-initCacClients hostname polling_interval_secs tenants tenants_count = do
-  init_cac_clients hostname polling_interval_secs tenants tenants_count
+initCacClients :: CString -> CULong -> Ptr CString -> CInt -> CBool ->  IO  CInt
+initCacClients hostname polling_interval_secs tenants tenants_count enable_polling = do
+  init_cac_clients hostname polling_interval_secs tenants tenants_count enable_polling
 
-initSuperPositionClients :: CString -> CULong -> Ptr CString -> CInt -> IO CInt
-initSuperPositionClients hostname polling_interval tenants tenants_count = do
-  init_superposition_clients hostname polling_interval tenants tenants_count
+initSuperPositionClients :: CString -> CULong -> Ptr CString -> CInt -> CBool -> IO CInt
+initSuperPositionClients hostname polling_interval tenants tenants_count enable_polling = do
+  init_superposition_clients hostname polling_interval tenants tenants_count enable_polling
 
 isExperimentsRunning :: String -> IO Bool
 isExperimentsRunning tenant = do
@@ -80,6 +83,7 @@ getVariants tenant context toss = do
   resPtr <- get_variants tenant' context' $ fromIntegral toss
   resPtr' <- freeJsonData resPtr
   result <- withForeignPtr resPtr' cStringToText
+  finalizeForeignPtr resPtr'
   return $ toJSON result
 
 getVariants' :: String -> [(Text,Value)] -> Int -> IO Value
@@ -89,6 +93,7 @@ getVariants' tenant context toss = do
   resPtr <- get_variants tenant' context' $ fromIntegral toss
   resPtr' <- freeJsonData resPtr
   result <- withForeignPtr resPtr' cStringToText
+  finalizeForeignPtr resPtr'
   return $ toJSON result
 
 evalCtx :: String -> String -> IO (Either String Object)
@@ -100,6 +105,7 @@ evalCtx tenant context = do
   resPtr' <- freeJsonData resPtr
   withForeignPtr resPtr' peekCString >>= putStrLn
   result <- withForeignPtr resPtr' cStringToText
+  finalizeForeignPtr resPtr'
   return $ convertTextToObject result
 
 -- evalExperiment :: String -> String -> Int -> IO (Either String Object)
@@ -118,6 +124,7 @@ evalExperiment tenant context toss = do
   resPtr <- eval_experiment tenant' context' $ fromIntegral toss
   resPtr' <- freeJsonData resPtr
   result <- withForeignPtr resPtr' cStringToText
+  finalizeForeignPtr resPtr'
   return $ Text.unpack $ makeNull result
 
 freeJsonData :: Ptr CChar -> IO (ForeignPtr CChar)
@@ -150,22 +157,22 @@ cStringToText cStr = pack <$> peekCString cStr
 parseJsonToHashMap :: Text -> Maybe MyHashMap
 parseJsonToHashMap = DA.decode . BS.fromStrict . encodeUtf8
 
-initCACClient :: String -> Int -> [String] -> IO Int
-initCACClient host interval tenants = do
+initCACClient :: String -> Int -> [String] -> Bool -> IO Int
+initCACClient host interval tenants enablePolling = do
   let tenantsCount = P.length tenants
   arr1 <- mapM stringToCString tenants
   arr2 <- newArray arr1
   host' <- stringToCString host
-  x <- initCacClients host' (fromIntegral interval) arr2 (fromIntegral tenantsCount)
+  x <- initCacClients host' (fromIntegral interval) arr2 (fromIntegral tenantsCount) (fromBool enablePolling)
   return $ fromIntegral x
 
-initSuperPositionClient :: String -> Int -> [String] -> IO Int
-initSuperPositionClient host interval tenants = do
+initSuperPositionClient :: String -> Int -> [String] -> Bool -> IO Int
+initSuperPositionClient host interval tenants enablePolling = do
   let tenantsCount = P.length tenants
   arr1 <- mapM stringToCString tenants
   arr2 <- newArray arr1
   host' <- stringToCString host
-  x <- initSuperPositionClients host' (fromIntegral interval) arr2 (fromIntegral tenantsCount)
+  x <- initSuperPositionClients host' (fromIntegral interval) arr2 (fromIntegral tenantsCount) (fromBool enablePolling)
   return $ fromIntegral x
 
 runSuperPositionPolling :: [String] -> IO ()
@@ -178,10 +185,10 @@ startCACPolling tenants = do
   arr1 <- mapM stringToCString tenants
   mapM_ ( forkOS . start_polling_updates) arr1
 
-initializeClients :: (String, Int, [String]) -> (String, Int, [String]) -> IO Int
-initializeClients (host1,interval1,tenants1) (host2,interval2,tenants2) = do
-  _ <- initCACClient host1 interval1 tenants1
-  initSuperPositionClient host2 interval2 tenants2
+initializeClients :: (String, Int, [String], Bool) -> (String, Int, [String], Bool) -> IO Int
+initializeClients (host1,interval1,tenants1,enablePolling1) (host2,interval2,tenants2, enablePolling2) = do
+  _ <- initCACClient host1 interval1 tenants1 enablePolling1
+  initSuperPositionClient host2 interval2 tenants2 enablePolling2
 
 createClientFromConfig :: String -> Int -> String -> String -> IO Int
 createClientFromConfig tenant interval  config hostname = do
@@ -199,6 +206,7 @@ evalExperimentAsString tenant context toss = do
   resPtr <- eval_experiment tenant' context' $ fromIntegral toss
   resPtr' <- freeJsonData resPtr
   result <- withForeignPtr resPtr' cStringToText
+  finalizeForeignPtr resPtr'
   return $ Text.unpack $ makeNull result
 
 evalExperimentAsValue :: String -> String -> Int -> IO Value
@@ -208,6 +216,7 @@ evalExperimentAsValue tenant context toss = do
   resPtr <- eval_experiment tenant' context' $ fromIntegral toss
   resPtr' <- freeJsonData resPtr
   result <- withForeignPtr resPtr' cStringToText
+  finalizeForeignPtr resPtr'
   return $ toJSON result
 
 dropPrefix :: Text.Text -> Key -> Key
@@ -263,15 +272,24 @@ newtype Kilometers = Kilometers
   }
   deriving newtype (Show, Read, Num, Eq, Ord, Enum, Real, Integral, FromJSON, ToJSON)
 
+-- evalExperimentAsStringForked :: String -> String -> Int -> IO String
+-- evalExperimentAsStringForked tenant context toss = do
+--   tenant' <- stringToCString tenant
+--   context' <- stringToCString context
+--   resPtr <- forkOS $ eval_experiment tenant' context' $ fromIntegral toss
+--   resPtr' <- freeJsonData resPtr
+--   result <- withForeignPtr resPtr' cStringToText
+--   return $ Text.unpack $ makeNull result
+
 connect :: IO()
 connect = do
-    arr1 <- mapM stringToCString ["atlas_driver_offer_bpp_v2", "ltsdefault"]
+    arr1 <- mapM stringToCString ["atlas_driver_offer_bpp_v2"]
     arr2 <- newArray arr1
     hostEnv <- Se.lookupEnv "HOST"
-    host <- stringToCString "https://api.sandbox.beckn.juspay.in/cac"
-    x <- initCacClients host 10 arr2 (fromIntegral (P.length arr1))
+    host <- stringToCString "http://localhost:8080"
+    x <- initCacClients host 10 arr2 (fromIntegral (P.length arr1)) (fromBool True)
     putStrLn $ "x: " <> show x
-    y <- initSuperPositionClients host 1 arr2 (fromIntegral (P.length arr1))
+    y <- initSuperPositionClients host 1 arr2 (fromIntegral (P.length arr1)) (fromBool True)
     putStrLn $ "y: " <> show y
     case x of 
       0 -> mapM_  (forkOS . run_polling_updates) arr1
@@ -283,15 +301,41 @@ connect = do
     pure ()
 
 
+
+helper1 :: IO ()
+helper1  = do
+  -- putStrLn "Starting"
+  time <- getCurrentTime
+  dpcCond <- hashMapToString $ HashMap.fromList [(pack "merchantOperatingCityId", String (pack "1e7b7ab9-3b9b-4d3e-a47c-11e7d2a9ff98"))]
+  contextValue <- evalExperimentAsString "test" dpcCond 1
+  -- putStrLn $ "contextValue: " <> show contextValue
+  time' <- getCurrentTime
+  when (realToFrac (diffUTCTime time' time) > 4.0) $
+    putStrLn "Latency is greater than 40 seconds"
+
+helper2 :: Int -> IO ()
+helper2 n = do
+  _ <- mapConcurrently (const helper1) [1..n]
+  -- print latencies
+  -- helper2 n
+  pure ()
+
+
+
+
 main :: IO ()
 main = do
   -- putStrLn "Starting Haskell client..."
   -- _ <- forkOS connect
+  -- _ <- forkOS connect
+  -- time <- getCurrentTime
+  -- _ <- helper2 100000
+  -- time' <- getCurrentTime
+  -- putStrLn $ "Total time taken: " <> show (diffUTCTime time' time)
+  -- threadDelay 60000000
   _ <- connect
-  dpcCond <- hashMapToString $ HashMap.fromList []
-  contextValue <- evalExperimentAsString "atlas_driver_offer_bpp_v2" dpcCond 1
-  let res' = contextValue ^@.. _Object . reindexed (dropPrefix (pack "driverPoolConfig:")) (itraversed . indices (Text.isPrefixOf (pack "driverPoolConfig:") . DAK.toText))
-  print res'
+  lat <- helper2 100000
+  -- putStrLn $ "Latency: " <> show lat
   -- cond <- hashMapToString $ HashMap.fromList [(pack "farePolicyId", DA.String (Text.pack "094112f5-4523-bb76-7697-d6cfd4905361"))]
   -- status <- createClientFromConfig "atlas_driver_offer_bpp_v2" 10  "{}" "https://api.sandbox.beckn.juspay.in/cac"
   -- case status of

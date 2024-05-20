@@ -59,7 +59,7 @@ fn convert_to_rust_duration(secs: c_ulonglong, nanos: c_uint) -> std::time::Dura
 }
 
 #[no_mangle]
-pub extern "C" fn init_cac_clients(hostname: *const c_char, polling_interval_secs : c_ulonglong, tenants : *const *const c_char, tenants_count: c_uint) -> c_int {
+pub extern "C" fn init_cac_clients(hostname: *const c_char, polling_interval_secs : c_ulonglong, tenants : *const *const c_char, tenants_count: c_uint, enable_polling: bool) -> c_int {
     let (tx, rx) = oneshot::channel();
     let cac_hostname = convert_c_str_to_rust_str(hostname);
     let polling_interval = convert_to_rust_duration(polling_interval_secs, 0);
@@ -75,6 +75,7 @@ pub extern "C" fn init_cac_clients(hostname: *const c_char, polling_interval_sec
                     tenant.to_string(),
                     polling_interval,
                     cac_hostname.to_string(),
+                    enable_polling,
                 )
                 .await {
                     Ok(x) => {
@@ -99,7 +100,7 @@ pub extern "C" fn init_cac_clients(hostname: *const c_char, polling_interval_sec
 }
 
 #[no_mangle]
-pub extern "C" fn init_superposition_clients(hostname: *const c_char, polling_frequency : c_ulonglong, tenants : *const *const c_char, tenants_count: c_uint) -> c_int {
+pub extern "C" fn init_superposition_clients(hostname: *const c_char, polling_frequency : c_ulonglong, tenants : *const *const c_char, tenants_count: c_uint, enable_polling:bool) -> c_int {
     let (tx, rx) = oneshot::channel();
     let hostname = convert_c_str_to_rust_str(hostname);
     let poll_frequency = polling_frequency as u64;
@@ -108,7 +109,7 @@ pub extern "C" fn init_superposition_clients(hostname: *const c_char, polling_fr
     local.block_on(&Runtime::new().unwrap(), async move {
         for tenant in cac_tenants {
                 match sp::CLIENT_FACTORY
-                    .create_client(tenant.to_string(), poll_frequency, hostname.to_string(), true)
+                    .create_client(tenant.to_string(), poll_frequency, hostname.to_string(), enable_polling)
                     .await {
                         Ok(x) => {
                             log::debug!("Superposition Client created successfully for tenant {:?} and val: {:?}", tenant, x);
@@ -469,6 +470,7 @@ impl Client {
         tenant: String,
         polling_interval: Duration,
         hostname: String,
+        enable_polling: bool,
     ) -> Result<Self, String> {
         let reqw_client = reqwest::Client::builder().build().map_err_to_string()?;
         let cac_endpoint = format!("{hostname}/config");
@@ -489,7 +491,7 @@ impl Client {
                 last_modified_at.unwrap_or(DateTime::<Utc>::from(UNIX_EPOCH)),
             )),
             config: Data::new(RwLock::new(config)),
-            enable_polling: Data::new(RwLock::new(true)),
+            enable_polling: Data::new(RwLock::new(enable_polling)),
         };
         // if update_config_periodically {
         //     client.clone().start_polling_update().await;
@@ -507,7 +509,6 @@ impl Client {
         {
             Ok(x) => x,
             Err(e) => {
-                log::error!("Failed to parse the config: {:?}", e);
                 log::error!("Failed to parse the config: {:?}", e);
                 Config {
                     contexts: vec![],
@@ -556,9 +557,9 @@ impl Client {
 
     async fn update_cac(&self) -> Result<String, String> {
         let fetched_config = self.fetch().await?;
-        let mut config = self.config.write().map_err_to_string()?;
         let mut last_modified = self.last_modified.write().map_err_to_string()?;
         let last_modified_at = get_last_modified(&fetched_config);
+        let mut config = self.config.write().map_err_to_string()?;
         *config = fetched_config.json::<Config>().await.map_err_to_string()?;
         if let Some(val) = last_modified_at {
             *last_modified = val;
@@ -580,8 +581,8 @@ impl Client {
         loop {
             match enable {
                 true => {
-                    interval.tick().await;
                     self.update_cac().await.unwrap_or_else(identity);
+                    interval.tick().await;
                 }
                 false => {
                     let _ = interval.tick().await;
@@ -621,7 +622,18 @@ impl ClientFactory {
         tenant: String,
         polling_interval: Duration,
         hostname: String,
+        enable_polling: bool,
     ) -> Result<Arc<Client>, String> {
+        let client = Arc::new(
+            Client::new(
+                tenant.to_string(),
+                polling_interval,
+                hostname,
+                enable_polling
+            )
+            .await?,
+        );
+
         let mut factory = match self.write() {
             Ok(factory) => factory,
             Err(e) => {
@@ -629,19 +641,9 @@ impl ClientFactory {
                 return Err("CAC_CLIENT_FACTORY: Failed to create client".to_string());
             }
         };
-
         if let Some(client) = factory.get(&tenant) {
             return Ok(client.clone());
-        }
-
-        let client = Arc::new(
-            Client::new(
-                tenant.to_string(),
-                polling_interval,
-                hostname,
-            )
-            .await?,
-        );
+        }        
         factory.insert(tenant.to_string(), client.clone());
         return Ok(client.clone());
     }
@@ -654,6 +656,13 @@ impl ClientFactory {
         hostname: String
     ) -> Result<Arc<Client>, String> {
         let tenant_clone =  tenant.clone();
+        let client = Arc::new(
+            Client::new_with_config(
+                tenant,
+                polling_interval,
+                config,
+                hostname
+            ));
         let mut factory = match self.write() {
             Ok(factory) => factory,
             Err(e) => {
@@ -662,14 +671,6 @@ impl ClientFactory {
             }
         };
 
-
-        let client = Arc::new(
-            Client::new_with_config(
-                tenant,
-                polling_interval,
-                config,
-                hostname
-            ));
         factory.insert(tenant_clone.to_string(), client.clone());
         Ok(client.clone())
     }

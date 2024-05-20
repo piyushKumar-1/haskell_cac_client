@@ -23,6 +23,8 @@ library
         , lens
         , lens-aeson
         , vector
+        , time
+        , async
     
     extra-libraries: cac_client 
     -- Directories containing source files.
@@ -42,6 +44,8 @@ executable haskell-cac
         , lens
         , lens-aeson
         , vector
+        , time
+        , async
     ghc-options: -threaded -rtsopts
     
     extra-libraries: cac_client 

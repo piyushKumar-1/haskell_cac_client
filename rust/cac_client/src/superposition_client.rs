@@ -40,7 +40,6 @@ impl Client {
         let poll_interval = self.client_config.poll_frequency;
         let hostname = &self.client_config.hostname;
         let mut interval = time::interval(Duration::from_secs(poll_interval));
-        let mut start_date = self.last_polled.write().await;
         loop {
             // NOTE: this additional block scopes the write lock
             // at the end of this block, the write lock on exp store is released
@@ -49,6 +48,7 @@ impl Client {
             let value = *lock;
             match value{
                 true => {
+                    let mut start_date = self.last_polled.write().await;
                     {
                         let experiments = match get_experiments(
                             hostname.clone(),
@@ -195,18 +195,17 @@ impl ClientFactory {
         hostname: String,
         enable_polling: bool,
     ) -> Result<Arc<Client>, String> {
-        let mut factory = self.write().await;
-
-        if let Some(client) = factory.get(&tenant) {
-            return Ok(client.clone());
-        }
 
         let client = Arc::new(Client::new(Config {
             tenant: tenant.to_string(),
             hostname: hostname,
             poll_frequency: poll_frequency,
         }, enable_polling));
+        let mut factory = self.write().await;
 
+        if let Some(client) = factory.get(&tenant) {
+            return Ok(client.clone());
+        }
         factory.insert(tenant.to_string(), client.clone());
         return Ok(client.clone());
     }
@@ -218,14 +217,13 @@ impl ClientFactory {
         hostname: String,
         enable_polling: bool,
     ) -> Result<Arc<Client>, String> {
-        let mut factory = self.write().await;
-
         let client = Arc::new(Client::new(Config {
             tenant: tenant.to_string(),
             hostname: hostname,
             poll_frequency: poll_frequency,
         }, enable_polling));
 
+        let mut factory = self.write().await;
         factory.insert(tenant.to_string(), client.clone());
         return Ok(client.clone());
     }
