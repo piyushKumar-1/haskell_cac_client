@@ -19,7 +19,7 @@ use std::{
     collections::HashMap,
     convert::identity,
     sync::{Arc, RwLock},
-    time::{Duration, UNIX_EPOCH, SystemTime},
+    time::{Duration, UNIX_EPOCH},
 };
 use tokio::{runtime::Runtime, task};
 use utils::core::MapError;
@@ -60,7 +60,7 @@ fn convert_to_rust_duration(secs: c_ulonglong, nanos: c_uint) -> std::time::Dura
 
 #[no_mangle]
 pub extern "C" fn init_cac_clients(hostname: *const c_char, polling_interval_secs : c_ulonglong, tenants : *const *const c_char, tenants_count: c_uint, enable_polling: bool) -> c_int {
-    let (tx, rx) = oneshot::channel();
+    let (tx, _rx) = oneshot::channel();
     let cac_hostname = convert_c_str_to_rust_str(hostname);
     let polling_interval = convert_to_rust_duration(polling_interval_secs, 0);
     let cac_tenants = convert_c_array_to_vec(tenants, tenants_count);
@@ -101,7 +101,7 @@ pub extern "C" fn init_cac_clients(hostname: *const c_char, polling_interval_sec
 
 #[no_mangle]
 pub extern "C" fn init_superposition_clients(hostname: *const c_char, polling_frequency : c_ulonglong, tenants : *const *const c_char, tenants_count: c_uint, enable_polling:bool) -> c_int {
-    let (tx, rx) = oneshot::channel();
+    let (tx, _rx) = oneshot::channel();
     let hostname = convert_c_str_to_rust_str(hostname);
     let poll_frequency = polling_frequency as u64;
     let cac_tenants = convert_c_array_to_vec(tenants, tenants_count);
@@ -388,7 +388,7 @@ pub extern "C" fn create_client_from_config(c_tenant: *const c_char, polling_int
                         x,
                         hostname_str.to_string()
                     ) {
-                        Ok(x) => {
+                        Ok(_) => {
                             log::debug!("CAC Client created successfully ");
                             match sp::CLIENT_FACTORY
                                 .create_client_with_config(
@@ -398,7 +398,7 @@ pub extern "C" fn create_client_from_config(c_tenant: *const c_char, polling_int
                                     false,
                                 )
                                 .await {
-                                    Ok(x) => {
+                                    Ok(_) => {
                                         log::debug!("Superposition Client created successfully ");
                                     },
                                     Err(err) => {
@@ -557,35 +557,43 @@ impl Client {
 
     async fn update_cac(&self) -> Result<String, String> {
         let fetched_config = self.fetch().await?;
-        let mut last_modified = self.last_modified.write().map_err_to_string()?;
         let last_modified_at = get_last_modified(&fetched_config);
-        let mut config = self.config.write().map_err_to_string()?;
-        *config = fetched_config.json::<Config>().await.map_err_to_string()?;
         if let Some(val) = last_modified_at {
+            let mut last_modified = self.last_modified.write().map_err_to_string()?;
             *last_modified = val;
         }
+        let config_from_cac = fetched_config.json::<Config>().await.map_err_to_string()?;
+        let mut config = self.config.write().map_err_to_string()?;
+        *config = config_from_cac;
         Ok(format!("{}: CAC updated successfully", self.tenant))
+    }
+    
+    pub async fn get_enable_polling(self: Arc<Self>) -> Result<bool, String>{
+        match self.enable_polling.read()
+        {
+            Ok(x) => return Ok(x.clone()),
+            Err(e) => {
+                log::error!("Failed to acquire read lock on enable_polling: {:?}", e);
+                return Err("Failed to acquire read lock on enable_polling".to_string());
+            }
+        }
     }
 
     pub async fn start_polling_update(self: Arc<Self>) {
         let mut interval = interval(self.polling_interval);
-        let enable_poll = match self.enable_polling.read()
-        {
-            Ok(x) => x,
-            Err(e) => {
-                log::error!("Failed to acquire read lock: {:?}", e);
-                return;
-            }
-        };
-        let enable = *enable_poll;
+        let enable = self.clone().get_enable_polling().await;
         loop {
             match enable {
-                true => {
+                Ok(true) => {
                     self.update_cac().await.unwrap_or_else(identity);
                     interval.tick().await;
                 }
-                false => {
+                Ok(false) => {
                     let _ = interval.tick().await;
+                }
+                Err(e) => {
+                    log::error!("Failed to get enable_polling for cac client: {:?}", e);
+                    return;
                 }
             }
             
