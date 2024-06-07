@@ -446,6 +446,7 @@ pub struct Client {
     last_modified: Data<RwLock<DateTime<Utc>>>,
     config: Data<RwLock<Config>>,
     enable_polling: Data<RwLock<bool>>,
+    created_from_config: Data<RwLock<bool>>,
 }
 
 fn clone_reqw(reqw: &RequestBuilder) -> Result<RequestBuilder, String> {
@@ -492,6 +493,7 @@ impl Client {
             )),
             config: Data::new(RwLock::new(config)),
             enable_polling: Data::new(RwLock::new(enable_polling)),
+            created_from_config: Data::new(RwLock::new(false)),
         };
         // if update_config_periodically {
         //     client.clone().start_polling_update().await;
@@ -532,6 +534,7 @@ impl Client {
             )),
             config : new_config2,
             enable_polling: Data::new(RwLock::new(false)),
+            created_from_config : Data::new(RwLock::new(true)),
         }
     }
 
@@ -620,6 +623,21 @@ impl Client {
             &query_data,
         )
     }
+
+    pub fn is_created_from_config(&self) -> Result<bool, String> {
+        match self.created_from_config.read() {
+            Ok(cfc) => {
+                if *cfc {
+                    return Ok(true);
+                } else {
+                    return Err("Not created from config".to_string());
+                }
+            }
+            _  => {
+                return Err("Not created from config".to_string());
+            }
+        }
+    }
 }
 
 #[derive(Deref, DerefMut)]
@@ -666,21 +684,32 @@ impl ClientFactory {
         let tenant_clone =  tenant.clone();
         let client = Arc::new(
             Client::new_with_config(
-                tenant,
+                tenant.clone(),
                 polling_interval,
                 config,
                 hostname
             ));
-        let mut factory = match self.write() {
-            Ok(factory) => factory,
-            Err(e) => {
-                log::error!("CAC_CLIENT_FACTORY: failed to acquire write lock {}", e);
-                return Err("CAC_CLIENT_FACTORY: Failed to create client".to_string());
+        let old_client = self.get_client( tenant.clone());
+        old_client
+        .and_then(|client| {
+            if client.is_created_from_config() == Ok(true) {
+                Ok(client.clone())
+            } else {
+                Err("not created from config".to_string())
             }
-        };
+        })
+        .or_else(|_| {
+            let mut factory = match self.write() {
+                Ok(factory) => factory,
+                Err(e) => {
+                    log::error!("CAC_CLIENT_FACTORY: failed to acquire write lock {}", e);
+                    return Err("CAC_CLIENT_FACTORY: Failed to create client".to_string());
+                }
+            };
+            factory.insert(tenant_clone.to_string(), client.clone());
+            Ok(client.clone())
+        })
 
-        factory.insert(tenant_clone.to_string(), client.clone());
-        Ok(client.clone())
     }
 
     pub fn get_client(&self, tenant: String) -> Result<Arc<Client>, String> {

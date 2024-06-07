@@ -7,6 +7,7 @@ use serde_json::Value;
 use tokio::{
     sync::RwLock,
     time::{self, Duration},
+    runtime::Runtime
 };
 pub use types::{Config, Experiments, Variants};
 use types::{ExperimentStore, ListExperimentsResponse, Variant, VariantType};
@@ -18,13 +19,14 @@ pub struct Client {
     pub(crate) http_client: reqwest::Client,
     last_polled: Arc<RwLock<DateTime<Utc>>>,
     enable_polling: Arc<RwLock<bool>>,
+    created_from_config: Arc<RwLock<bool>>,
 }
 
 //TODO: replace all unwraps with proper error handling
 // DO NOT let panics show up in library
 
 impl Client {
-    pub fn new(config: Config, enable_poll : bool) -> Self {
+    pub fn new(config: Config, enable_poll : bool, cfc : bool,) -> Self {
         Client {
             client_config: Arc::new(config),
             experiments: Arc::new(RwLock::new(HashMap::new())),
@@ -33,6 +35,7 @@ impl Client {
                 Utc.with_ymd_and_hms(2023, 01, 01, 0, 0, 0).unwrap(),
             )),
             enable_polling: Arc::new(RwLock::new(enable_poll)),
+            created_from_config: Arc::new(RwLock::new(cfc)),
         }
     }
     pub  async fn get_enable_polling(self: Arc<Self>) -> bool{
@@ -144,6 +147,16 @@ impl Client {
         let index = buckets.into_iter().position(|x| toss < x);
         applicable_variants.get(index.unwrap()).map(Variant::clone)
     }
+
+    pub async fn is_created_from_config(&self) -> Result<bool, String> {
+        let cfc =  self.created_from_config.read().await;
+        if *cfc {
+            Ok (true)
+        } else {
+            Err ("not created from config".to_string())
+        }
+            
+    }
 }
 
 async fn get_experiments(
@@ -202,7 +215,7 @@ impl ClientFactory {
             tenant: tenant.to_string(),
             hostname: hostname,
             poll_frequency: poll_frequency,
-        }, enable_polling));
+        }, enable_polling, false));
         let mut factory = self.write().await;
 
         if let Some(client) = factory.get(&tenant) {
@@ -223,11 +236,29 @@ impl ClientFactory {
             tenant: tenant.to_string(),
             hostname: hostname,
             poll_frequency: poll_frequency,
-        }, enable_polling));
+        }, enable_polling, true));
 
-        let mut factory = self.write().await;
-        factory.insert(tenant.to_string(), client.clone());
-        return Ok(client.clone());
+        let old_client = self.get_client( tenant.clone());
+
+        old_client.await
+        .and_then(|client| {
+            let rt = Runtime::new().unwrap();
+            rt.block_on (async { 
+                if client.is_created_from_config().await == Ok(true) {
+                    Ok(client.clone())
+                } else {
+                    Err("not created from config".to_string())
+                }
+            })
+        })
+        .or_else(|_| {
+            let rt = Runtime::new().unwrap();
+            rt.block_on (async { 
+                let mut factory = self.write().await;
+                factory.insert(tenant.clone().to_string(), client.clone());
+                Ok(client.clone())
+            })
+        })
     }
 
     pub async fn get_client(&self, tenant: String) -> Result<Arc<Client>, String> {
