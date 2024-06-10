@@ -8,7 +8,7 @@ use tokio::{
     sync::RwLock,
     time::{self, Duration},
 };
-pub use types::{Config, Experiment, Experiments, Variants};
+pub use types::{Config, Experiments, Variants};
 use types::{ExperimentStore, ListExperimentsResponse, Variant, VariantType};
 
 #[derive(Clone, Debug)]
@@ -35,6 +35,9 @@ impl Client {
             enable_polling: Arc::new(RwLock::new(enable_poll)),
         }
     }
+    pub  async fn get_enable_polling(self: Arc<Self>) -> bool{
+        self.enable_polling.read().await.clone()
+    }
 
     pub async fn run_polling_updates(self: Arc<Self>) {
         let poll_interval = self.client_config.poll_frequency;
@@ -44,8 +47,7 @@ impl Client {
             // NOTE: this additional block scopes the write lock
             // at the end of this block, the write lock on exp store is released
             // allowing other threads to read updated data
-            let lock = self.enable_polling.read().await;
-            let value = *lock;
+            let value = self.clone().get_enable_polling().await;
             match value{
                 true => {
                     let mut start_date = self.last_polled.write().await;
@@ -223,9 +225,24 @@ impl ClientFactory {
             poll_frequency: poll_frequency,
         }, enable_polling));
 
-        let mut factory = self.write().await;
-        factory.insert(tenant.to_string(), client.clone());
-        return Ok(client.clone());
+        let old_client = self.get_client( tenant.clone()).await;
+
+        match old_client {
+            Ok(old_client) => {
+                if old_client.client_config == client.client_config {
+                    return Ok(old_client.clone());
+                } else {
+                    let mut factory = self.write().await;
+                    factory.insert(tenant.to_string(), client.clone());
+                    return Ok(client.clone());
+                }
+            }
+            Err(_) => {
+                let mut factory = self.write().await;
+                factory.insert(tenant.to_string(), client.clone());
+                return Ok(client.clone());
+            }
+        }
     }
 
     pub async fn get_client(&self, tenant: String) -> Result<Arc<Client>, String> {

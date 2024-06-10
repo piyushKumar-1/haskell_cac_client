@@ -222,13 +222,13 @@ evalExperimentAsValue tenant context toss = do
 dropPrefix :: Text.Text -> Key -> Key
 dropPrefix key' config = maybe config DAK.fromText $ Text.stripPrefix key' (DAK.toText config)
 
-getConfigFromCAC :: (FromJSON a, ToJSON a) => [(Text, Value)] -> String -> Int ->  String -> IO (Maybe a)
+getConfigFromCAC :: [(Text, Value)] -> String -> Int ->  String -> IO Value
 getConfigFromCAC context tenant toss keyToDrop = do
   config <- evalExperiment tenant context toss
   let res' = config ^@.. _Object . reindexed (dropPrefix (pack keyToDrop)) (itraversed . indices (Text.isPrefixOf (pack keyToDrop) . DAK.toText))  
-  pure $ DA.Object (KM.fromList res') ^? _JSON
+  pure $ DA.Object (KM.fromList res')
 
-getConfigListFromCAC :: (FromJSON a, ToJSON a) => [(Text, Value)] -> String -> Int ->  String -> String -> IO (Maybe [a])
+getConfigListFromCAC :: [(Text, Value)] -> String -> Int ->  String -> String -> IO Value
 getConfigListFromCAC context tenant toss keyToDrop key' = do
   config <- evalExperiment tenant context toss
   let res' = config ^@.. _Object . reindexed (dropPrefix (pack keyToDrop)) (itraversed . indices (Text.isPrefixOf (pack keyToDrop) . DAK.toText))  
@@ -236,7 +236,7 @@ getConfigListFromCAC context tenant toss keyToDrop key' = do
         fromMaybe
           (DA.Array (DV.fromList []))
           (DAKM.lookup (DAK.fromText (Text.pack key')) (DAKM.fromList res'))
-  pure $ res'' ^? _JSON
+  pure res''
   
 
 makeNull :: Text -> Text 
