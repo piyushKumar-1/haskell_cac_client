@@ -395,7 +395,7 @@ pub extern "C" fn create_client_from_config(c_tenant: *const c_char, polling_int
                                     tenant.to_string(),
                                     polling_interval.as_secs(),
                                     hostname_str.to_string(),
-                                    false,
+                                    true,
                                 )
                                 .await {
                                     Ok(_) => {
@@ -424,13 +424,13 @@ pub extern "C" fn create_client_from_config(c_tenant: *const c_char, polling_int
     }
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct Context {
     pub condition: Value,
     pub override_with_keys: [String; 1],
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct Config {
     contexts: Vec<Context>,
     overrides: Map<String, Value>,
@@ -446,7 +446,6 @@ pub struct Client {
     last_modified: Data<RwLock<DateTime<Utc>>>,
     config: Data<RwLock<Config>>,
     enable_polling: Data<RwLock<bool>>,
-    created_from_config: Data<RwLock<bool>>,
 }
 
 fn clone_reqw(reqw: &RequestBuilder) -> Result<RequestBuilder, String> {
@@ -493,7 +492,6 @@ impl Client {
             )),
             config: Data::new(RwLock::new(config)),
             enable_polling: Data::new(RwLock::new(enable_polling)),
-            created_from_config: Data::new(RwLock::new(false)),
         };
         // if update_config_periodically {
         //     client.clone().start_polling_update().await;
@@ -533,8 +531,7 @@ impl Client {
                 DateTime::<Utc>::from(UNIX_EPOCH)
             )),
             config : new_config2,
-            enable_polling: Data::new(RwLock::new(false)),
-            created_from_config : Data::new(RwLock::new(true)),
+            enable_polling: Data::new(RwLock::new(true)),
         }
     }
 
@@ -623,21 +620,6 @@ impl Client {
             &query_data,
         )
     }
-
-    pub fn is_created_from_config(&self) -> Result<bool, String> {
-        match self.created_from_config.read() {
-            Ok(cfc) => {
-                if *cfc {
-                    return Ok(true);
-                } else {
-                    return Err("Not created from config".to_string());
-                }
-            }
-            _  => {
-                return Err("Not created from config".to_string());
-            }
-        }
-    }
 }
 
 #[derive(Deref, DerefMut)]
@@ -691,8 +673,11 @@ impl ClientFactory {
             ));
         let old_client = self.get_client( tenant.clone());
         old_client
-        .and_then(|client| {
-            if client.is_created_from_config() == Ok(true) {
+        .and_then(|o_client| {
+            let o_config = self.get_config(o_client.clone());
+            let n_config = self.get_config(client.clone());
+            if o_config == n_config {
+                log::debug!("CAC_CLIENT_FACTORY: client already exists for tenant: {}", tenant);
                 Ok(client.clone())
             } else {
                 Err("not created from config".to_string())
@@ -706,10 +691,23 @@ impl ClientFactory {
                     return Err("CAC_CLIENT_FACTORY: Failed to create client".to_string());
                 }
             };
+            if let Some(value) = factory.remove(&tenant_clone) {
+                drop(value);
+            }
             factory.insert(tenant_clone.to_string(), client.clone());
             Ok(client.clone())
         })
 
+    }
+
+    pub fn get_config(&self, client:Arc<Client>) -> Result<Config, String> {
+        match client.config.read() {
+            Ok(x) => Ok(x.clone()),
+            Err(e) => {
+                log::error!("Failed to acquire read lock on config: {:?}", e);
+                Err("Failed to acquire read lock on config".to_string())
+            }
+        }
     }
 
     pub fn get_client(&self, tenant: String) -> Result<Arc<Client>, String> {

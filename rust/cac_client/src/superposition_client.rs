@@ -239,6 +239,9 @@ impl ClientFactory {
             }
             Err(_) => {
                 let mut factory = self.write().await;
+                if let Some(value) = factory.remove(&tenant) {
+                    drop(value);
+                }
                 factory.insert(tenant.to_string(), client.clone());
                 return Ok(client.clone());
             }
