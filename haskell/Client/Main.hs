@@ -40,6 +40,7 @@ import qualified Data.Vector as DV
 import Data.Time.Clock
 import Control.Concurrent.Async (mapConcurrently)
 import Control.Concurrent
+import Data.Bool as B
 
 foreign import ccall "init_cac_clients" init_cac_clients :: CString -> CULong -> Ptr CString -> CInt -> CBool -> IO  CInt
 
@@ -225,19 +226,27 @@ dropPrefix key' config = maybe config DAK.fromText $ Text.stripPrefix key' (DAK.
 getConfigFromCAC :: [(Text, Value)] -> String -> Int ->  String -> IO Value
 getConfigFromCAC context tenant toss keyToDrop = do
   config <- evalExperiment tenant context toss
-  let res' = config ^@.. _Object . reindexed (dropPrefix (pack keyToDrop)) (itraversed . indices (Text.isPrefixOf (pack keyToDrop) . DAK.toText))  
+  let res'' = config ^@.. _Object . reindexed (dropPrefix (pack keyToDrop)) (itraversed . indices (Text.isPrefixOf (pack keyToDrop) . DAK.toText))  
+      res' = makeValueNull <$> res''
   pure $ DA.Object (KM.fromList res')
 
 getConfigListFromCAC :: [(Text, Value)] -> String -> Int ->  String -> String -> IO Value
 getConfigListFromCAC context tenant toss keyToDrop key' = do
   config <- evalExperiment tenant context toss
   let res' = config ^@.. _Object . reindexed (dropPrefix (pack keyToDrop)) (itraversed . indices (Text.isPrefixOf (pack keyToDrop) . DAK.toText))  
+      res''' = makeValueNull <$> res'
       res'' =
         fromMaybe
           (DA.Array (DV.fromList []))
           (DAKM.lookup (DAK.fromText (Text.pack key')) (DAKM.fromList res'))
   pure res''
   
+makeValueNull :: (a, Value) -> (a, Value)
+makeValueNull (a, String v)
+  | v == pack "null" = (a, Null)
+  | v == pack "Null" = (a, Null)
+  | v == pack "None" = (a, Null)
+makeValueNull obj = obj
 
 makeNull :: Text -> Text 
 makeNull txt = 
