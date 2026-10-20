@@ -1,6 +1,6 @@
 {
   inputs = {
-    common.url = "github:nammayatri/common";
+    common.url = "github:nammayatri/common?ref=ghc-98-upgrade";
     nixpkgs.follows = "common/nixpkgs";
     crane = {
       url = "github:ipetkov/crane";
